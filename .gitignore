@@ -1,0 +1,6 @@
+.venv/
+Model/venv/
+Model/src/Transformer_model/venv/
+Model/src/venv/
+Model/src/Transformer_model/results/
+Model/src/Transformer_model/fine_tuned_chemberta/
