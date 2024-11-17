@@ -1,84 +1,57 @@
 import pandas as pd
 import torch
+import shap
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from rdkit import Chem
-from rdkit.Chem import Draw
 
 # Load the pre-trained model and tokenizer
 tokenizer = AutoTokenizer.from_pretrained("seyonec/ChemBERTa-zinc-base-v1")
 model = AutoModelForSequenceClassification.from_pretrained("fine_tuned_chemberta")
 model.eval()
 
-# Load the data with predictions
-data = pd.read_csv("predicted_properties.csv")  # Ensure this path is correct
+# Load the predicted properties data
+predicted_df = pd.read_csv("predicted_properties.csv")  # Ensure this file exists
+
+# Ensure the SMILES column exists and is properly formatted
+if "SMILES" not in predicted_df.columns:
+    raise ValueError("The 'SMILES' column is missing in the input data.")
+
+# Convert SMILES to a list of strings
+smiles_data = predicted_df["SMILES"][
+    :100
+].tolist()  # Take the first 100 SMILES as a list
 
 
-# Function to generate predictions
-def predict_smiles(model, tokenizer, smiles_list):
-    tokenized_inputs = tokenizer(
+# Function for model predictions
+def model_predict(smiles_list):
+    # Ensure input is a list of strings
+    if isinstance(smiles_list, str):
+        smiles_list = [smiles_list]  # Convert a single string to a list
+
+    # Tokenize input SMILES
+    inputs = tokenizer(
         smiles_list, padding=True, truncation=True, max_length=128, return_tensors="pt"
     )
-    inputs = {
-        "input_ids": tokenized_inputs["input_ids"].to(model.device),
-        "attention_mask": tokenized_inputs["attention_mask"].to(model.device),
-    }
+    inputs = {k: v.to(model.device) for k, v in inputs.items()}
+
+    # Perform prediction
     with torch.no_grad():
         outputs = model(**inputs)
     return outputs.logits.cpu().numpy()
 
 
-# Function to compare original and counterfactual SMILES and generate an explanation
-def explain_counterfactual(original_smiles, counterfactual_smiles, model, tokenizer):
-    # Predict properties for original and counterfactual
-    original_prediction = predict_smiles(model, tokenizer, [original_smiles])[0]
-    counterfactual_prediction = predict_smiles(
-        model, tokenizer, [counterfactual_smiles]
-    )[0]
+# Initialize SHAP KernelExplainer
+explainer = shap.KernelExplainer(
+    model_predict, data=smiles_data[:10]
+)  # Use only the first 10 for initialization
 
-    # Parse molecules using RDKit
-    original_mol = Chem.MolFromSmiles(original_smiles)
-    counterfactual_mol = Chem.MolFromSmiles(counterfactual_smiles)
+# Generate explanations for the first sample
+smiles_sample = [smiles_data[0]]  # Take a single SMILES string for explanation
+shap_values = explainer.shap_values(smiles_sample)
 
-    # Visualize molecules (optional for Jupyter Notebooks or image output)
-    if original_mol and counterfactual_mol:
-        print("Original Molecule:")
-        display(Draw.MolToImage(original_mol))
-        print("Counterfactual Molecule:")
-        display(Draw.MolToImage(counterfactual_mol))
+# Display SHAP values
+print("SHAP Values for the sample:")
+print(shap_values)
 
-    # Analyze structural changes
-    differences = []
-    for i, (orig_char, cf_char) in enumerate(
-        zip(original_smiles, counterfactual_smiles)
-    ):
-        if orig_char != cf_char:
-            differences.append((i, orig_char, cf_char))
-
-    # Generate explanation
-    explanation = f"Original SMILES: {original_smiles}\n"
-    explanation += f"Original prediction: {original_prediction}\n"
-    explanation += f"Counterfactual SMILES: {counterfactual_smiles}\n"
-    explanation += f"Counterfactual prediction: {counterfactual_prediction}\n\n"
-    explanation += "Differences observed:\n"
-
-    for diff in differences:
-        explanation += f" - Position {diff[0]}: '{diff[1]}' changed to '{diff[2]}'\n"
-
-    explanation += "\nImpact on properties:\n"
-    explanation += "The changes observed in the SMILES string could indicate:\n"
-    explanation += " - Altered substructure affecting stability, reactivity, or binding affinity.\n"
-    explanation += (
-        " - Potential shifts in molecular polarity or functional group interactions.\n"
-    )
-
-    print(explanation)
-
-
-# Select an example from your data and generate a counterfactual
-original_smiles = data["SMILES"].iloc[
-    0
-]  # Take the first SMILES from your data for analysis
-counterfactual_smiles = "68C1C2CCC(C2)C1CN(CCO)C(=O)c1ccc(Cl)cc1"  # Replace this with a generated or selected counterfactual
-
-# Run the counterfactual explanation
-explain_counterfactual(original_smiles, counterfactual_smiles, model, tokenizer)
+# Optional: Visualize the SHAP explanation
+shap.initjs()
+shap.force_plot(explainer.expected_value, shap_values[0], smiles_sample)
