@@ -14,6 +14,7 @@ const config: Config = {
         foreground: "var(--foreground)",
         mainBg: "#161616", // For main background
         sidebarBg: "#202020", // For sidebar and component backgrounds
+        chatIconColor: "#10A37F",
       },
     },
   },

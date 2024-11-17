@@ -101,9 +101,9 @@ const Sidebar = () => {
         />
 
         <SidebarLink
-          href="/pages/shap-explanations"
+          href="/pages/generative"
           icon={MdBarChart}
-          label="SHAP Explanations"
+          label="Generated Molecules"
         />
         <SidebarLink
           href="/dashboard/lime-explanations"
