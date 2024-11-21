@@ -24,12 +24,14 @@ const data = [
   { name: "CC1=CC=CC=C1", A: 125, B: 170, C: 130 }, // Toluene
 ];
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+import { TooltipProps } from "recharts";
+
+const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-gray-800 text-white p-2 rounded shadow-md">
         <p className="font-semibold">{label} (SMILES)</p>
-        {payload.map((item: any, index: number) => (
+        {payload.map((item: { name: string; value: number; color: string }, index: number) => (
           <p key={index} style={{ color: item.color }}>
             {item.name}: {item.value}
           </p>

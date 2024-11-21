@@ -20,7 +20,9 @@ const data = [
   { name: "CCCCCC", propertyA: 170, propertyB: 220 }, // Hexane
 ];
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+import { TooltipProps } from "recharts";
+
+const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-gray-800 text-white p-2 rounded">
