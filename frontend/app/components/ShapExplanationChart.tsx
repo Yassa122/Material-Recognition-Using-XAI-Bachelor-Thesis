@@ -60,7 +60,7 @@ const ShapExplanationChart = () => {
             meanline: { visible: true },
             marker: {
               color: values.map(
-                (val, i) => customColors[index % customColors.length]
+                () => customColors[index % customColors.length]
               ), // Cycle through custom colors
               opacity: 0.8,
             },

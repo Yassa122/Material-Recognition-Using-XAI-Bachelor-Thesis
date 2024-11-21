@@ -8,7 +8,6 @@ import {
   MdDashboard,
   MdCloudUpload,
   MdBarChart,
-  MdSwapHoriz,
   MdLightbulb,
   MdSettings,
   MdPerson,
@@ -22,7 +21,7 @@ const SidebarLink = ({
   customIcon, // Optional custom icon prop
 }: {
   href: string;
-  icon?: any;
+  icon?: React.ComponentType<{ className?: string }>;
   label: string;
   customIcon?: string;
 }) => {
@@ -105,13 +104,13 @@ const Sidebar = () => {
           icon={MdBarChart}
           label="Generated Molecules"
         />
-        <SidebarLink
+        {/* <SidebarLink
           href="/dashboard/lime-explanations"
           icon={MdSwapHoriz}
           label="LIME Explanations"
-        />
+        /> */}
         <SidebarLink
-          href="/dashboard/predictions"
+          href="/pages/predictions"
           icon={MdLightbulb}
           label="Predictions"
         />
