@@ -11,7 +11,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import { FiVolume2, FiCopy, FiRefreshCcw, FiThumbsDown } from "react-icons/fi";
+import { motion } from "framer-motion";
 
 // Register Chart.js components
 ChartJS.register(
@@ -31,6 +31,7 @@ const ChatComponent = () => {
     },
   ]);
   const [input, setInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
 
   const handleSend = () => {
     if (!input.trim()) return;
@@ -39,12 +40,16 @@ const ChatComponent = () => {
     const newMessage = { sender: "user", text: input };
     setMessages((prev) => [...prev, newMessage]);
 
-    // Simulate system response (Placeholder for backend integration)
-    const systemResponse = {
-      sender: "system",
-      text: "This output is influenced by the molecular weight and solubility due to their high SHAP values.",
-    };
-    setMessages((prev) => [...prev, systemResponse]);
+    // Simulate system typing
+    setIsTyping(true);
+    setTimeout(() => {
+      const systemResponse = {
+        sender: "system",
+        text: "This output is influenced by the molecular weight and solubility due to their high SHAP values.",
+      };
+      setMessages((prev) => [...prev, systemResponse]);
+      setIsTyping(false);
+    }, 2000); // Simulate 2 seconds delay
 
     // Clear input
     setInput("");
@@ -87,7 +92,12 @@ const ChatComponent = () => {
   return (
     <div className="flex flex-col h-full bg-sidebarBg rounded-xl shadow-lg">
       {/* Chat Header */}
-      <div className="flex items-center px-6 py-4 bg-black rounded-t-xl">
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="flex items-center px-6 py-4 bg-black rounded-t-xl"
+      >
         <div className="w-10 h-10 bg-chatIconColor rounded-full flex items-center justify-center text-white font-bold">
           Y
         </div>
@@ -95,13 +105,16 @@ const ChatComponent = () => {
           <div className="text-sm text-gray-100 font-bold">You</div>
           <div className="text-xs text-gray-400">LIME Explanation:</div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto bg-sidebarBg p-4 space-y-4">
         {messages.map((msg, idx) => (
-          <div
+          <motion.div
             key={idx}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3, delay: idx * 0.2 }}
             className={`flex ${
               msg.sender === "user" ? "justify-end" : "justify-start"
             }`}
@@ -121,30 +134,31 @@ const ChatComponent = () => {
                 {msg.sender === "system" ? "LIME" : ""}
               </div>
               <p className="text-sm whitespace-pre-line">{msg.text}</p>
-              {/* Graph Section */}
-
-              {/* Action Icons */}
-              {msg.sender === "system" && (
-                <div className="flex items-center mt-4 space-x-4 text-gray-400">
-                  <button className="hover:text-gray-200">
-                    <FiVolume2 className="w-5 h-5" />
-                  </button>
-                  <button className="hover:text-gray-200">
-                    <FiCopy className="w-5 h-5" />
-                  </button>
-                  <button className="hover:text-gray-200">
-                    <FiRefreshCcw className="w-5 h-5" />
-                  </button>
-                  <button className="hover:text-gray-200">
-                    <FiThumbsDown className="w-5 h-5" />
-                  </button>
-                </div>
-              )}
             </div>
-          </div>
+          </motion.div>
         ))}
 
-        <div className="p-4 bg-zinc-900 rounded-lg mt-4 shadow-md">
+        {/* Typing Indicator */}
+        {isTyping && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5, repeat: Infinity }}
+            className="flex items-center space-x-2"
+          >
+            <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
+            <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
+            <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse"></div>
+          </motion.div>
+        )}
+
+        {/* Chart Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="p-4 bg-zinc-900 rounded-lg mt-4 shadow-md"
+        >
           <h3 className="text-sm font-bold text-gray-300 mb-2">
             LIME Bar Chart
           </h3>
@@ -153,11 +167,16 @@ const ChatComponent = () => {
             <span className="text-sm font-medium text-green-400">+2.45%</span>
           </div>
           <Bar data={barData} options={barOptions} />
-        </div>
+        </motion.div>
       </div>
 
       {/* Input Field */}
-      <div className="mt-4 flex items-center px-6 pb-4">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="mt-4 flex items-center px-6 pb-4"
+      >
         <input
           type="text"
           className="flex-1 bg-zinc-700 text-gray-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black"
@@ -165,7 +184,9 @@ const ChatComponent = () => {
           value={input}
           onChange={(e) => setInput(e.target.value)}
         />
-        <button
+        <motion.button
+          whileHover={{ scale: 1.2 }}
+          whileTap={{ scale: 0.9 }}
           onClick={handleSend}
           className="ml-3 bg-zinc-500 flex items-center justify-center text-white w-12 h-12 rounded-lg hover:bg-zinc-900 focus:ring-2 focus:ring-black focus:outline-none"
         >
@@ -183,8 +204,8 @@ const ChatComponent = () => {
               d="M12 19V5m-7 7l7-7 7 7"
             />
           </svg>
-        </button>
-      </div>
+        </motion.button>
+      </motion.div>
     </div>
   );
 };
