@@ -190,6 +190,13 @@ def main():
     knowledge_dim = 3
     model = KnowledgeAugmentedModel(base_model, knowledge_dim, num_labels)
 
+    # Determine the device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    # Move the model to the device
+    model.to(device)
+
     # Load the fine-tuning dataset (with properties)
     fine_tune_file = "SMILES_Big_Data_Set.csv"  # Training dataset path
     smiles_train, targets_train, knowledge_features_train = load_smiles_data(
@@ -216,7 +223,11 @@ def main():
 
     # Prepare training and validation datasets
     train_dataset = SMILESDataset(
-        train_smiles, train_knowledge_features, train_targets, tokenizer, max_length=128
+        train_smiles,
+        train_knowledge_features,
+        train_targets,
+        tokenizer,
+        max_length=128,
     )
     val_dataset = SMILESDataset(
         val_smiles, val_knowledge_features, val_targets, tokenizer, max_length=128
@@ -232,6 +243,8 @@ def main():
         weight_decay=0.01,
         logging_dir="./logs",
         logging_steps=10,
+        # Automatically select device (GPU if available)
+        # device=device,  # Note: Trainer automatically handles device placement
     )
 
     # Trainer for fine-tuning
@@ -262,7 +275,12 @@ def main():
 
     # Generate predictions
     predictions = []
+
+    # Move the model to the device (already moved, but reaffirming)
+    model.to(device)
     model.eval()  # Set model to evaluation mode
+
+    # Prepare the dataloader
     dataloader = DataLoader(predict_dataset, batch_size=16, collate_fn=data_collator)
 
     # Time tracking start
@@ -271,14 +289,9 @@ def main():
     # Using tqdm for progress bar
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="Predicting", unit="batch"):
-            inputs = {
-                "input_ids": batch["input_ids"].to(trainer.model.device),
-                "attention_mask": batch["attention_mask"].to(trainer.model.device),
-                "knowledge_features": batch["knowledge_features"].to(
-                    trainer.model.device
-                ),
-            }
-            outputs = model(**inputs)
+            # Move inputs to the device
+            batch = {k: v.to(device) for k, v in batch.items()}
+            outputs = model(**batch)
             logits = outputs["logits"]
             predictions.extend(logits.cpu().numpy())
 
@@ -286,6 +299,7 @@ def main():
     end_time = time.time()
     elapsed_time = end_time - start_time
 
+    # Save predictions
     predictions_df = pd.DataFrame(
         predictions,
         columns=["Predicted_pIC50", "Predicted_logP", "Predicted_num_atoms"],
