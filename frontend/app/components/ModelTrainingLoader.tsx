@@ -1,7 +1,47 @@
+"use client";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import StarIcon from "@/public/Star.svg"; // Adjust the path as needed
 
+interface TrainingProgress {
+  progress: number; // 0 to 100
+  timeLeft: string; // e.g., "2m 30s"
+}
+
 const ModelTrainingLoader = () => {
+  const [progress, setProgress] = useState<number>(0);
+  const [timeLeft, setTimeLeft] = useState<string>("Loading...");
+  const [loading, setLoading] = useState<boolean>(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    // Set up a periodic request to check the training status
+    const interval = setInterval(() => {
+      // Fetch the current training status from Flask backend
+      fetch("http://localhost:5000/get_training_status")
+        .then((response) => response.json())
+        .then((data: TrainingProgress) => {
+          setProgress(data.progress);
+          setTimeLeft(data.timeLeft);
+
+          // If the training is complete, stop polling and redirect
+          if (data.progress === 100) {
+            clearInterval(interval); // Stop polling
+            setLoading(false); // Hide the loading spinner
+            router.push("/pages/model-training"); // Redirect to model training page
+          }
+        })
+        .catch((error) => {
+          console.error("Error fetching training status:", error);
+          clearInterval(interval); // Stop polling in case of an error
+        });
+    }, 5000); // Check the status every 5 seconds
+
+    // Clean up the interval on component unmount
+    return () => clearInterval(interval);
+  }, [router]);
+
   return (
     <div className="bg-[#202020] p-16 rounded-lg shadow-lg flex flex-col items-center justify-center space-y-6 w-full h-full">
       {/* Animated SVG Icon */}
@@ -20,46 +60,20 @@ const ModelTrainingLoader = () => {
       <p className="text-gray-400 text-lg">Your data is being loaded...</p>
 
       {/* Glowing and Animated Loading Bar */}
-      <div className="w-full mt-28">
-        <div className="h-4 rounded-full bg-gray-700 overflow-hidden relative mt-28">
+      <div className="w-full mt-8">
+        <div className="h-4 rounded-full bg-gray-700 overflow-hidden relative">
           <div
-            className="h-4 rounded-full absolute top-0 left-0 animate-gradient"
-            style={{
-              width: "100%",
-              background: "linear-gradient(90deg, #7F00FF, #E100FF)",
-              boxShadow: "0 0 10px #7F00FF, 0 0 20px #E100FF",
-            }}
+            className="h-4 rounded-full bg-gradient-to-r from-green-400 via-yellow-500 to-red-600"
+            style={{ width: `${progress}%` }}
           ></div>
         </div>
       </div>
 
-      <style jsx>{`
-        .animate-spin-slow {
-          animation: spin 4s linear infinite;
-        }
-
-        @keyframes spin {
-          0% {
-            transform: rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg);
-          }
-        }
-
-        .animate-gradient {
-          animation: loading-gradient 2s linear infinite;
-        }
-
-        @keyframes loading-gradient {
-          0% {
-            transform: translateX(-100%);
-          }
-          100% {
-            transform: translateX(100%);
-          }
-        }
-      `}</style>
+      {/* Progress and Time Left */}
+      <div className="mt-4 text-gray-300">
+        <p>Progress: {progress}%</p>
+        <p>Time Left: {timeLeft}</p>
+      </div>
     </div>
   );
 };
