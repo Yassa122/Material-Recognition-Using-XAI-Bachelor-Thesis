@@ -97,6 +97,7 @@ const DataUploadPage = () => {
             </div>
           </div>
         </div>
+        <SmilesDataTable />
 
         {/* Loading Modal */}
         {loading && (
