@@ -1,11 +1,14 @@
 // components/UploadData.tsx
 "use client";
-// components/UploadData.tsx
 
 import { useState } from "react";
 import { FaUpload } from "react-icons/fa";
 
-const UploadData = () => {
+interface UploadDataProps {
+  onFileSelected: (file: File) => void;
+}
+
+const UploadData: React.FC<UploadDataProps> = ({ onFileSelected }) => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
@@ -16,6 +19,7 @@ const UploadData = () => {
     const selectedFile = e.target.files ? e.target.files[0] : null;
     if (selectedFile) {
       setFile(selectedFile);
+      onFileSelected(selectedFile); // Notify parent component
     }
   };
 
@@ -54,21 +58,22 @@ const UploadData = () => {
   return (
     <div className="flex bg-[#202020] p-6 rounded-lg shadow-lg space-x-8">
       {/* Upload Box */}
-      <div className="flex-1 border-dashed border-2 bg-black border-gray-500 p-8 rounded-lg flex flex-col items-center justify-center relative">
+      <div className="flex-1 border-dashed border-2 bg-black border-gray-500 p-4 max-w-md w-full rounded-lg flex flex-col items-center justify-center relative">
         <input
           type="file"
           id="fileInput"
           name="file"
-          accept=".csv,.json" // You can restrict the file types if needed
+          accept=".csv,.json" // Restrict file types if needed
           className="absolute inset-0 opacity-0 cursor-pointer"
+          onChange={handleFileChange}
         />
-        <div className="flex flex-col items-center justify-center space-y-4 cursor-pointer">
-          <FaUpload className="text-blue-500 text-5xl mb-4" />
+        <div className="flex flex-col items-center justify-center space-y-2 cursor-pointer">
+          <FaUpload className="text-blue-500 text-4xl mb-2" />
           <p className="text-blue-400 font-semibold text-lg">Click to upload</p>
-          <p className="text-gray-400 text-sm">CSV and XLSX files allowed</p>
+          <p className="text-gray-400 text-sm">CSV and JSON files allowed</p>
         </div>
         {file && (
-          <div className="mt-4 text-white">
+          <div className="mt-2 text-white">
             <p>Selected file: {file.name}</p>
             <button
               className="mt-2 px-4 py-2 bg-blue-500 rounded-lg"
@@ -89,4 +94,3 @@ const UploadData = () => {
 };
 
 export default UploadData;
-
