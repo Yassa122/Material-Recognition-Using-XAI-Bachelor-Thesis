@@ -19,11 +19,11 @@ const ModelTrainingLoader = () => {
     const fetchTrainingStatus = async () => {
       try {
         const response = await fetch(
-          "http://localhost:5000/get_training_status"
+          "http://localhost:5000/get_prediction_status"
         );
         const data = await response.json();
 
-        setStatusMessage(data.message || "Training in progress...");
+        setStatusMessage(data.message || "Predicting in progress...");
 
         if (data.progress !== undefined) {
           setProgress(data.progress);
@@ -37,16 +37,16 @@ const ModelTrainingLoader = () => {
           setLoading(false);
           clearInterval(interval);
           // Redirect or update the UI as needed
-          router.push("/pages/model-training");
+          router.push("/pages/model-predicting");
         } else if (data.status === "error") {
           setLoading(false);
           clearInterval(interval);
           // Handle error state appropriately
-          console.error("Training error:", data.message);
+          console.error("Prediction error:", data.message);
           // Optionally, display an error message to the user
         }
       } catch (error) {
-        console.error("Error fetching training status:", error);
+        console.error("Error fetching predicting status:", error);
         // Optionally, handle fetch errors (e.g., network issues)
       }
     };
@@ -71,7 +71,7 @@ const ModelTrainingLoader = () => {
       </div>
 
       {/* Title */}
-      <h2 className="text-3xl font-bold text-white">Model Training...</h2>
+      <h2 className="text-3xl font-bold text-white">Model Predicting...</h2>
       <p className="text-gray-400 text-lg">{statusMessage}</p>
 
       {/* Progress Bar */}
