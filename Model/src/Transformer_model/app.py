@@ -34,6 +34,18 @@ from threading import Thread
 from io import BytesIO
 from datetime import datetime
 import numpy as np
+import matplotlib
+from flask import send_from_directory
+from lime.lime_tabular import LimeTabularExplainer
+import os
+import openai
+from flask import Flask, request, jsonify
+
+# from dotenv import load_dotenv
+import logging
+
+matplotlib.use("Agg")  # Use non-interactive backend for saving plots
+import matplotlib.pyplot as plt
 
 # Flask App Initialization
 app = Flask(__name__)
@@ -125,7 +137,6 @@ class SMILESDataset(Dataset):
 
 
 # Custom Model Class
-# Custom Model Class
 class KnowledgeAugmentedModel(nn.Module):
     def __init__(self, base_model, knowledge_dim, num_labels):
         super(KnowledgeAugmentedModel, self).__init__()
@@ -197,12 +208,31 @@ class KnowledgeAugmentedModel(nn.Module):
 
 
 # Load Pre-trained Model and Tokenizer
-# Load Pre-trained Model and Tokenizer
-def load_model_and_tokenizer():
+def load_model_and_tokenizer(num_labels=None):
     global model, tokenizer
     tokenizer = AutoTokenizer.from_pretrained("seyonec/ChemBERTa-zinc-base-v1")
 
     model_path = "./fine_tuned_chemberta_with_knowledge"
+
+    # Determine num_labels
+    if num_labels is None:
+        # Attempt to load num_labels from config if it exists.
+        num_labels = 3  # default fallback
+        config_path = os.path.join(model_path, "config.json")
+        if os.path.exists(config_path):
+            try:
+                import json
+
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                num_labels = config["num_labels"]
+                logging.info(f"Loaded num_labels={num_labels} from config.json")
+            except (KeyError, json.JSONDecodeError):
+                logging.warning(
+                    "No 'num_labels' found in config.json, falling back to default num_labels=3."
+                )
+        else:
+            logging.warning("config.json not found, using default num_labels=3.")
 
     if os.path.exists(model_path) and os.path.isdir(model_path):
         model_state_path = os.path.join(model_path, "custom_model_state.pt")
@@ -211,12 +241,12 @@ def load_model_and_tokenizer():
 
             # Load the custom model using the class method
             knowledge_dim = 3
-            num_labels = 3
-            model = KnowledgeAugmentedModel.from_pretrained(
+            model_local = KnowledgeAugmentedModel.from_pretrained(
                 model_path, knowledge_dim, num_labels
             )
-            model.to(device)
-            model.eval()  # Set to evaluation mode
+            model_local.to(device)
+            model_local.eval()  # Set to evaluation mode
+            model = model_local
 
             logging.info("Fine-tuned model loaded successfully.")
 
@@ -228,13 +258,16 @@ def load_model_and_tokenizer():
             # Fallback to the base pre-trained model
             base_model = AutoModelForSequenceClassification.from_pretrained(
                 "seyonec/ChemBERTa-zinc-base-v1",
-                num_labels=3,
+                num_labels=num_labels,
                 problem_type="regression",
             )
             knowledge_dim = 3
-            model = KnowledgeAugmentedModel(base_model, knowledge_dim, num_labels=3)
-            model.to(device)
-            model.eval()
+            model_local = KnowledgeAugmentedModel(
+                base_model, knowledge_dim, num_labels=num_labels
+            )
+            model_local.to(device)
+            model_local.eval()
+            model = model_local
 
             logging.info("Base pre-trained model loaded successfully.")
     else:
@@ -244,12 +277,17 @@ def load_model_and_tokenizer():
 
         # Load the base pre-trained model
         base_model = AutoModelForSequenceClassification.from_pretrained(
-            "seyonec/ChemBERTa-zinc-base-v1", num_labels=3, problem_type="regression"
+            "seyonec/ChemBERTa-zinc-base-v1",
+            num_labels=num_labels,
+            problem_type="regression",
         )
         knowledge_dim = 3
-        model = KnowledgeAugmentedModel(base_model, knowledge_dim, num_labels=3)
-        model.to(device)
-        model.eval()
+        model_local = KnowledgeAugmentedModel(
+            base_model, knowledge_dim, num_labels=num_labels
+        )
+        model_local.to(device)
+        model_local.eval()
+        model = model_local
 
         logging.info("Base pre-trained model loaded successfully.")
 
@@ -401,7 +439,9 @@ def train_model_in_background(file_path):
         with model_lock:
             # Load the custom model using the class method
             knowledge_dim = 3
-            num_labels = 3
+            num_labels = targets_train.shape[
+                1
+            ]  # Dynamically determine the number of labels
             model = KnowledgeAugmentedModel.from_pretrained(
                 fine_tuned_model_path, knowledge_dim, num_labels
             )
@@ -436,11 +476,11 @@ def train_model_in_background(file_path):
         logging.info(f"Fine-tuned base model saved to {fine_tuned_model_path}")
 
         # Save the custom layers' state_dict
-        # custom_model_state_path = os.path.join(
-        #     fine_tuned_model_path, "custom_model_state.pt"
-        # )
-        # torch.save(model.state_dict(), custom_model_state_path)
-        # logging.info(f"Custom model state saved to {custom_model_state_path}")
+        custom_model_state_path = os.path.join(
+            fine_tuned_model_path, "custom_model_state.pt"
+        )
+        torch.save(model.state_dict(), custom_model_state_path)
+        logging.info(f"Custom model state saved to {custom_model_state_path}")
 
         # Reload the trained model into the global `model` variable
         with model_lock:
@@ -472,31 +512,50 @@ def train_model_in_background(file_path):
 def explain_shap_as_json(file_path):
     try:
         # Load predictions
-        predictions_file_path = file_path.replace(
-            ".csv", "shap_1732931106_predicted_properties.csv.csv"
-        )
+        predictions_file_path = os.path.join(UPLOAD_FOLDER, "predictions.csv")
         predictions_df = pd.read_csv(predictions_file_path)
-        predictions = predictions_df[
+        knowledge_features = predictions_df[
             ["Predicted_pIC50", "Predicted_logP", "Predicted_num_atoms"]
         ].values
 
         # Reduce sample size for SHAP
-        sampled_predictions = predictions[:100]  # Use only the first 100 samples
+        sampled_knowledge_features = knowledge_features[
+            :100
+        ]  # Use only the first 100 samples
+
+        # Choose a representative SMILES string (e.g., the first one)
+        representative_smiles = predictions_df["SMILES"].iloc[0]
+        tokenized = tokenizer(
+            representative_smiles,
+            padding="max_length",
+            truncation=True,
+            max_length=128,
+            return_tensors="pt",
+        )
+        fixed_input_ids = tokenized["input_ids"].to(device)
+        fixed_attention_mask = tokenized["attention_mask"].to(device)
 
         # SHAP explanation
-        def model_predict(inputs):
-            inputs = torch.tensor(inputs, dtype=torch.float).to(device)
+        def model_predict(knowledge_features_input):
+            knowledge_features_tensor = torch.tensor(
+                knowledge_features_input, dtype=torch.float
+            ).to(device)
             with torch.no_grad():
                 outputs = model(
-                    input_ids=None, attention_mask=None, knowledge_features=inputs
+                    input_ids=fixed_input_ids.repeat(
+                        knowledge_features_tensor.shape[0], 1
+                    ),
+                    attention_mask=fixed_attention_mask.repeat(
+                        knowledge_features_tensor.shape[0], 1
+                    ),
+                    knowledge_features=knowledge_features_tensor,
                 )
                 return outputs["logits"].cpu().numpy()
 
         # Use k-means to summarize the background data
-        explainer = shap.KernelExplainer(
-            model_predict, shap.kmeans(sampled_predictions, 10)
-        )
-        shap_values = explainer.shap_values(sampled_predictions)
+        background = shap.kmeans(sampled_knowledge_features, 10)
+        explainer = shap.KernelExplainer(model_predict, background)
+        shap_values = explainer.shap_values(sampled_knowledge_features)
 
         # Format SHAP values for JSON response
         response = {
@@ -566,6 +625,154 @@ def get_shap_status():
     return jsonify(shap_status)
 
 
+def explain_lime_as_json(file_path):
+    try:
+        # Load predictions
+        predictions_file_path = os.path.join(UPLOAD_FOLDER, "predictions.csv")
+        predictions_df = pd.read_csv(predictions_file_path)
+
+        # Ensure required columns exist
+        required_columns = [
+            "SMILES",
+            "Predicted_pIC50",
+            "Predicted_logP",
+            "Predicted_num_atoms",
+        ]
+        for col in required_columns:
+            if col not in predictions_df.columns:
+                raise ValueError(f"Column '{col}' is missing from predictions.csv")
+
+        knowledge_features = predictions_df[
+            ["Predicted_pIC50", "Predicted_logP", "Predicted_num_atoms"]
+        ].values
+
+        # Choose a representative instance (e.g., the first one)
+        representative_smiles = predictions_df["SMILES"].iloc[0]
+        tokenized = tokenizer(
+            representative_smiles,
+            padding="max_length",
+            truncation=True,
+            max_length=128,
+            return_tensors="pt",
+        )
+        fixed_input_ids = tokenized["input_ids"].to(device)
+        fixed_attention_mask = tokenized["attention_mask"].to(device)
+        representative_features = knowledge_features[0].reshape(1, -1)
+
+        # Define feature names and types
+        feature_names = ["Predicted_pIC50", "Predicted_logP", "Predicted_num_atoms"]
+
+        # Initialize LIME explainer
+        explainer = LimeTabularExplainer(
+            training_data=knowledge_features,
+            feature_names=feature_names,
+            mode="regression",
+            discretize_continuous=True,
+        )
+
+        # Define the prediction function for LIME
+        def model_predict(knowledge_features_input):
+            knowledge_features_tensor = torch.tensor(
+                knowledge_features_input, dtype=torch.float
+            ).to(device)
+            with torch.no_grad():
+                # Repeat fixed_input_ids and fixed_attention_mask for the batch size
+                batch_size = knowledge_features_tensor.shape[0]
+                repeated_input_ids = fixed_input_ids.repeat(batch_size, 1)
+                repeated_attention_mask = fixed_attention_mask.repeat(batch_size, 1)
+
+                outputs = model(
+                    input_ids=repeated_input_ids,
+                    attention_mask=repeated_attention_mask,
+                    knowledge_features=knowledge_features_tensor,
+                )
+                return outputs["logits"].cpu().numpy()
+
+        # Generate LIME explanation for the first instance
+        lime_exp = explainer.explain_instance(
+            representative_features[0], model_predict, num_features=3, num_samples=500
+        )
+
+        # Extract explanation as a dictionary
+        explanation = {"feature_names": feature_names, "weights": lime_exp.as_list()}
+
+        return explanation
+
+    except Exception as e:
+        logging.error(f"LIME explanation error: {str(e)}")
+        return {"error": str(e)}
+
+
+lime_status = {"status": "idle", "result": None, "message": ""}
+
+
+def background_lime_computation(file_path):
+    global lime_status
+    try:
+        lime_status["status"] = "running"
+        lime_status["message"] = "LIME explanation is being processed..."
+
+        # Perform LIME computation
+        lime_result = explain_lime_as_json(file_path)
+
+        lime_status["status"] = "completed"
+        lime_status["result"] = lime_result
+        lime_status["message"] = "LIME explanation completed successfully."
+
+    except Exception as e:
+        lime_status["status"] = "error"
+        lime_status["message"] = f"Error during LIME explanation: {str(e)}"
+        logging.error(f"LIME explanation error: {str(e)}")
+
+
+@app.route("/start_lime_explanation", methods=["POST"])
+def start_lime_explanation():
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "No file found in request"}), 400
+
+        file = request.files["file"]
+        file_path = os.path.join(
+            UPLOAD_FOLDER, f"lime_{int(time.time())}_{file.filename}"
+        )
+        file.save(file_path)
+
+        # Start LIME computation in the background
+        thread = Thread(target=background_lime_computation, args=(file_path,))
+        thread.start()
+
+        return (
+            jsonify({"message": "LIME explanation started.", "status": "running"}),
+            202,
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/lime_status", methods=["GET"])
+def get_lime_status():
+    """
+    Returns the current status of the LIME computation.
+    """
+    global lime_status
+    return jsonify(lime_status)
+
+
+@app.route("/lime_explanation", methods=["GET"])
+def get_lime_explanation():
+    """
+    Returns the LIME explanation result.
+    """
+    global lime_status
+    if lime_status["status"] == "completed":
+        return jsonify(lime_status["result"]), 200
+    elif lime_status["status"] == "error":
+        return jsonify({"error": lime_status["message"]}), 500
+    else:
+        return jsonify({"message": "LIME explanation is not yet completed."}), 202
+
+
 # Route to start training
 @app.route("/train", methods=["POST"])
 def train_model():
@@ -604,7 +811,6 @@ def get_training_status():
     return jsonify(training_status)
 
 
-# Route for prediction
 # Route for prediction
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -647,7 +853,7 @@ def get_predictions():
         page = int(request.args.get("page", 1))  # Default to page 1 if not provided
         limit = int(request.args.get("limit", 5))  # Default to 5 records per page
 
-        predictions_file_path = os.path.join(UPLOAD_FOLDER, "predicted_properties.csv")
+        predictions_file_path = os.path.join(UPLOAD_FOLDER, "predictions.csv")
 
         # Read the CSV file into a pandas DataFrame
         df = pd.read_csv(predictions_file_path)
@@ -687,106 +893,81 @@ def get_predictions():
         return jsonify({"error": str(e)}), 500
 
 
-# SHAP Explanation Processing Function
-# Updated SHAP Explanation Function
-# SHAP Explanation Processing Function
-
-
 def explain_shap_in_background(file_path):
-    global training_status
+    global shap_status
     try:
-        training_status["status"] = "running"
-        training_status["message"] = "Processing SHAP explanation..."
-        logging.info("SHAP explanation started.")
+        shap_status["status"] = "running"
+        shap_status["message"] = "SHAP explanation is being processed..."
 
-        # Check if predictions already exist
-        predictions_file_path = file_path.replace(".csv", "_predicted_properties.csv")
+        # Perform SHAP computation
+        shap_result = explain_shap_as_json(file_path)
 
-        # Log the upload folder path
-        logging.info(f"Checking UPLOAD_FOLDER: {UPLOAD_FOLDER}")
+        if "error" in shap_result:
+            shap_status["status"] = "error"
+            shap_status["message"] = shap_result["error"]
+            return
 
-        if not os.path.exists(predictions_file_path):
-            # If predictions do not exist, perform predictions first
-            smiles_predict, _, knowledge_features_predict = load_smiles_data(
-                file_path, properties_present=False
-            )
+        # Generate and save the SHAP summary plot
+        shap_values = np.array(shap_result["shap_values"])
+        base_values = np.array(shap_result["base_values"])
+        features = shap_result["features"]
 
-            # Prepare the dataset for prediction
-            predict_dataset = SMILESDataset(
-                smiles_predict,
-                knowledge_features_predict,
-                tokenizer=tokenizer,
-                max_length=128,
-            )
-            dataloader = DataLoader(predict_dataset, batch_size=64)
+        # Convert shap_values to a numpy array
+        shap_values = np.array(shap_values)
 
-            # Prepare the model in evaluation mode
-            model.eval()
+        # Create a directory to save SHAP plots if it doesn't exist
+        shap_plots_dir = os.path.join("shap_plots")
+        os.makedirs(shap_plots_dir, exist_ok=True)
 
-            # Collect predictions for SHAP explanation
-            predictions = []
-            with torch.no_grad():
-                for batch in tqdm(dataloader, desc="Predicting for SHAP explanation"):
-                    batch = {k: v.to(device) for k, v in batch.items()}
-                    outputs = model(**batch)
-                    logits = outputs["logits"]
-                    predictions.extend(logits.cpu().numpy())
+        # Generate a unique filename for the plot
+        plot_filename = f"shap_summary_{int(time.time())}.png"
+        plot_path = os.path.join(shap_plots_dir, plot_filename)
 
-            # Convert the predictions to a numpy array
-            predictions = np.array(predictions)
+        # Create the summary plot and save it
+        plt.figure()
+        shap.summary_plot(shap_values, features=features, show=False)
+        plt.savefig(plot_path, bbox_inches="tight")
+        plt.close()
 
-            # Save predictions to CSV
-            predictions_df = pd.DataFrame(
-                predictions,
-                columns=["Predicted_pIC50", "Predicted_logP", "Predicted_num_atoms"],
-            )
-            predictions_df["SMILES"] = smiles_predict
-            predictions_df.to_csv(predictions_file_path, index=False)
+        # Update the SHAP status with the plot path
+        shap_status["status"] = "completed"
+        shap_status["result"] = {
+            "shap_values": shap_result["shap_values"],
+            "base_values": shap_result["base_values"],
+            "plot_filename": plot_filename,
+        }
+        shap_status["message"] = (
+            "SHAP explanation and summary plot completed successfully."
+        )
 
-            # Log successful save and check folder contents
-            logging.info(f"Predictions saved to {predictions_file_path}")
+        logging.info(f"SHAP summary plot saved to {plot_path}")
 
-            # Check if the predictions file is in the UPLOAD_FOLDER
-            if os.path.exists(predictions_file_path):
-                logging.info(
-                    f"Predictions file successfully saved at: {predictions_file_path}"
-                )
-            else:
-                logging.error(f"Predictions file not found at: {predictions_file_path}")
-
-            # Log contents of the UPLOAD_FOLDER to verify if the file exists
-            logging.info(f"Current files in UPLOAD_FOLDER: {os.listdir(UPLOAD_FOLDER)}")
-
-        # If predictions exist, load them
-        predictions_df = pd.read_csv(predictions_file_path)
-        predictions = predictions_df[
-            ["Predicted_pIC50", "Predicted_logP", "Predicted_num_atoms"]
-        ].values
-
-        # Define a function to make predictions for SHAP explainer
-        def model_predict(inputs):
-            inputs = torch.tensor(inputs, dtype=torch.float).to(device)
-            with torch.no_grad():
-                outputs = model(
-                    input_ids=None, attention_mask=None, knowledge_features=inputs
-                )
-                return outputs["logits"].cpu().numpy()
-
-        # Initialize SHAP KernelExplainer or DeepExplainer
-        explainer = shap.KernelExplainer(model_predict, predictions)
-        shap_values = explainer.shap_values(predictions)
-
-        # Process SHAP values and save the explanations
-        shap.summary_plot(shap_values, predictions)
-
-        # Once done, update the status
-        training_status["status"] = "completed"
-        training_status["message"] = "SHAP explanation completed successfully."
-        logging.info("SHAP explanation completed.")
     except Exception as e:
-        training_status["status"] = "error"
-        training_status["message"] = f"Error during SHAP explanation: {str(e)}"
+        shap_status["status"] = "error"
+        shap_status["message"] = f"Error during SHAP explanation: {str(e)}"
         logging.error(f"SHAP explanation error: {str(e)}")
+
+
+@app.route("/download_shap_plot/<plot_filename>", methods=["GET"])
+def download_shap_plot(plot_filename):
+    """
+    Endpoint to download the SHAP summary plot image.
+    """
+    try:
+        shap_plots_dir = os.path.join("shap_plots")
+        file_path = os.path.join(shap_plots_dir, plot_filename)
+        if not os.path.exists(file_path):
+            return jsonify({"error": "Plot file not found"}), 404
+
+        return send_from_directory(
+            directory=shap_plots_dir,
+            path=plot_filename,
+            as_attachment=True,
+            mimetype="image/png",
+        )
+    except Exception as e:
+        logging.error(f"Error in /download_shap_plot/{plot_filename}: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 # Route for SHAP explanation (this starts the process in the background)
@@ -824,6 +1005,9 @@ def explain_predictions():
 @app.route("/get_explanation_status", methods=["GET"])
 def get_explanation_status():
     return jsonify(training_status)
+
+
+import requests  # Add this import at the top of your script if you plan to use HTTP requests
 
 
 def run_predictions(file_path):
@@ -905,6 +1089,22 @@ def run_predictions(file_path):
         prediction_status["progress"] = 100
         prediction_status["eta"] = "00:00:00"
         logging.info("Prediction completed.")
+
+        # Automatically start SHAP and LIME explanations
+        logging.info("Starting SHAP and LIME explanations.")
+        # Start SHAP explanation in a new thread
+        shap_thread = Thread(
+            target=background_shap_computation, args=(predictions_file,)
+        )
+        shap_thread.start()
+
+        # Start LIME explanation in a new thread
+        lime_thread = Thread(
+            target=background_lime_computation, args=(predictions_file,)
+        )
+        lime_thread.start()
+
+        logging.info("SHAP and LIME explanations have been initiated.")
 
     except Exception as e:
         # Update status to 'error'
@@ -1107,6 +1307,69 @@ def download_results(filename):
 
     except Exception as e:
         logging.error(f"Error in /download_results/{filename}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import logging
+import openai
+
+CORS(app)
+logging.basicConfig(level=logging.INFO)
+openai.api_key = "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"
+
+
+@app.route("/api/chatgpt", methods=["POST"])
+def chatgpt():
+    try:
+        # Log incoming request
+        logging.info("Received request to /api/chatgpt")
+        data = request.json
+        logging.info(f"Request data: {data}")
+
+        # Extract chat messages and LIME data from request
+        messages = data.get("messages", [])
+        lime_data = data.get("limeData", [])
+
+        if not messages:
+            return jsonify({"error": "No messages provided."}), 400
+
+        # Prepare OpenAI API messages
+        chat_messages = [
+            {
+                "role": "system",
+                "content": "You are an assistant that provides insights and answers questions.",
+            },
+            *[{"role": msg["role"], "content": msg["content"]} for msg in messages],
+        ]
+
+        # Include LIME data if available
+        if lime_data:
+            lime_context = f"The following LIME data provides insights: {lime_data}"
+            chat_messages.append({"role": "system", "content": lime_context})
+
+        # Log messages sent to OpenAI API
+        logging.info(f"Chat messages: {chat_messages}")
+
+        # Call OpenAI Chat API
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=chat_messages,
+            temperature=0.7,  # Adjust creativity
+        )
+
+        # Extract response content
+        ai_response = response.choices[0].message["content"]
+        logging.info(f"OpenAI response: {ai_response}")
+
+        return jsonify({"response": ai_response}), 200
+
+    except openai.error.OpenAIError as e:
+        logging.error(f"OpenAI API error: {e}")
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        logging.error(f"Server error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
