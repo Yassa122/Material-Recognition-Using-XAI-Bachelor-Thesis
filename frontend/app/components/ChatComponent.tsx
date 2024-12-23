@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Bar } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -27,13 +27,132 @@ const ChatComponent = () => {
   const [messages, setMessages] = useState([
     {
       sender: "system",
-      text: `The model made this prediction based on the following features and their contributions:\n\n• Molecular Weight had a strong positive impact (+20%), meaning higher molecular weight increased the likelihood of the compound being classified as active.\n• Solubility contributed negatively (-15%), which decreased the likelihood of the compound being active.\n• pH Level had a moderate positive influence (+10%), indicating that certain pH levels are associated with active compounds.\n• Toxicity had a slight negative effect (-5%), reducing the prediction score slightly.\n• Chemical Group had a minor positive influence (+5%).\n\n**Conclusion:**\n\nThe model predicted that this compound is likely active with a high confidence level of 85%, largely driven by its molecular weight and pH level. However, the solubility and toxicity characteristics pulled the prediction slightly in the opposite direction.`,
+      text: "LIME and SHAP explanations will load here once processed.",
     },
   ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [limeData, setLimeData] = useState([]);
+  const [shapData, setShapData] = useState([]);
+  const [loadingLime, setLoadingLime] = useState(true);
+  const [loadingShap, setLoadingShap] = useState(true);
 
-  const handleSend = () => {
+  // Fetch LIME and SHAP explanation data from the API
+  useEffect(() => {
+    const fetchLimeData = async () => {
+      try {
+        const response = await fetch("http://127.0.0.1:5000/lime_status");
+        const data = await response.json();
+
+        if (data.status === "completed") {
+          // Parse the LIME explanation weights into chart-compatible format
+          const barChartData = data.result.weights.map(([feature, weight]) => ({
+            label: feature,
+            value: Math.abs(weight), // Use absolute values for bar height
+          }));
+
+          // Update state with the fetched LIME data
+          setLimeData(barChartData);
+
+          // Append a new message explaining the LIME output
+          const explanationMessage = {
+            sender: "system",
+            text: `The LIME explanation shows the following feature impacts:\n\n${data.result.weights
+              .map(
+                ([feature, weight]) =>
+                  `• ${feature}: ${weight > 0 ? "+" : ""}${(
+                    weight * 100
+                  ).toFixed(2)}% impact`
+              )
+              .join("\n")}\n\nKey features are displayed in the chart below.`,
+          };
+          setMessages((prev) => [...prev, explanationMessage]);
+          setLoadingLime(false);
+        } else if (data.status === "error") {
+          setMessages((prev) => [
+            ...prev,
+            { sender: "system", text: "Error fetching LIME explanation." },
+          ]);
+          setLoadingLime(false);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            {
+              sender: "system",
+              text: "LIME explanation is still processing...",
+            },
+          ]);
+        }
+      } catch (err) {
+        setMessages((prev) => [
+          ...prev,
+          { sender: "system", text: "Failed to fetch LIME explanation." },
+        ]);
+      }
+    };
+
+    const fetchShapData = async () => {
+      try {
+        const response = await fetch("http://127.0.0.1:5000/shap_status");
+        const data = await response.json();
+
+        if (data.status === "completed") {
+          // Process SHAP data
+          const shapResult = data.result;
+          const features = shapResult.features;
+          const shapValues = shapResult.shap_values[0][0]; // Assuming first sample
+
+          // Structure data for visualization
+          const shapChartData = features.map((feature, index) => ({
+            label: feature,
+            value: shapValues[index],
+          }));
+
+          setShapData(shapChartData);
+
+          // Append a new message explaining the SHAP output
+          const shapExplanationMessage = {
+            sender: "system",
+            text: `The SHAP explanation provides detailed insights into feature impacts for the prediction:\n\n${features
+              .map(
+                (feature, index) =>
+                  `• ${feature}: ${shapValues[index] > 0 ? "+" : ""}${(
+                    shapValues[index] * 100
+                  ).toFixed(2)}% impact`
+              )
+              .join("\n")}\n\nKey features are displayed in the chart below.`,
+          };
+          setMessages((prev) => [...prev, shapExplanationMessage]);
+          setLoadingShap(false);
+        } else if (data.status === "error") {
+          setMessages((prev) => [
+            ...prev,
+            { sender: "system", text: "Error fetching SHAP explanation." },
+          ]);
+          setLoadingShap(false);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            {
+              sender: "system",
+              text: "SHAP explanation is still processing...",
+            },
+          ]);
+        }
+      } catch (err) {
+        setMessages((prev) => [
+          ...prev,
+          { sender: "system", text: "Failed to fetch SHAP explanation." },
+        ]);
+      }
+    };
+
+    // Fetch both LIME and SHAP data when the component mounts
+    fetchLimeData();
+    fetchShapData();
+  }, []);
+
+  const handleSend = async () => {
     if (!input.trim()) return;
 
     // Append user message
@@ -42,26 +161,67 @@ const ChatComponent = () => {
 
     // Simulate system typing
     setIsTyping(true);
-    setTimeout(() => {
-      const systemResponse = {
-        sender: "system",
-        text: "This output is influenced by the molecular weight and solubility due to their high SHAP values.",
-      };
-      setMessages((prev) => [...prev, systemResponse]);
-      setIsTyping(false);
-    }, 2000); // Simulate 2 seconds delay
 
-    // Clear input
-    setInput("");
+    try {
+      // Call Flask endpoint for OpenAI chat
+      const response = await fetch("http://127.0.0.1:5000/api/chatgpt", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            ...messages.map((msg) => ({
+              role: msg.sender === "user" ? "user" : "system",
+              content: msg.text,
+            })),
+            { role: "user", content: input },
+          ],
+          limeData, // Send LIME data as context
+          shapData, // Send SHAP data as context
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.response) {
+        // Append the API response to the chat
+        const systemResponse = { sender: "system", text: data.response };
+        setMessages((prev) => [...prev, systemResponse]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          { sender: "system", text: "No response from OpenAI API." },
+        ]);
+      }
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: "system",
+          text: "There was an error connecting to the API. Please try again.",
+        },
+      ]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
-  // Bar Chart Data
-  const barData = {
-    labels: ["00", "04", "08", "12", "14", "16", "18"], // Example X-axis labels
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault(); // Prevents default behavior if necessary
+      handleSend();
+      setInput(""); // Clear input after sending the message
+    }
+  };
+
+  // Bar Chart Data for LIME
+  const limeBarData = {
+    labels: limeData.map((d) => d.label),
     datasets: [
       {
-        label: "Impact",
-        data: [2, 1.5, 3, 2.7, 3.5, 4, 1], // Example data
+        label: "Feature Impact",
+        data: limeData.map((d) => d.value),
         backgroundColor: "rgba(75, 192, 192, 0.6)",
         borderColor: "rgba(75, 192, 192, 1)",
         borderWidth: 1,
@@ -71,7 +231,7 @@ const ChatComponent = () => {
     ],
   };
 
-  const barOptions = {
+  const limeBarOptions = {
     responsive: true,
     plugins: {
       legend: { display: false },
@@ -80,11 +240,52 @@ const ChatComponent = () => {
     scales: {
       x: {
         grid: { display: false },
-        ticks: { color: "#9CA3AF" }, // Tailwind gray-400
+        ticks: { color: "#9CA3AF" },
       },
       y: {
-        grid: { color: "#374151" }, // Tailwind gray-700
-        ticks: { color: "#9CA3AF" }, // Tailwind gray-400
+        grid: { color: "#374151" },
+        ticks: { color: "#9CA3AF" },
+      },
+    },
+  };
+
+  // Bar Chart Data for SHAP
+  const shapChartData = {
+    labels: shapData.map((d) => d.label),
+    datasets: [
+      {
+        label: "SHAP Value",
+        data: shapData.map((d) => d.value),
+        backgroundColor: shapData.map(
+          (d) =>
+            d.value > 0
+              ? "rgba(75, 192, 192, 0.6)" // Positive impact
+              : "rgba(255, 99, 132, 0.6)" // Negative impact
+        ),
+        borderColor: shapData.map((d) =>
+          d.value > 0 ? "rgba(75, 192, 192, 1)" : "rgba(255, 99, 132, 1)"
+        ),
+        borderWidth: 1,
+        borderRadius: 5,
+        barPercentage: 0.7,
+      },
+    ],
+  };
+
+  const shapOptions = {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: { enabled: true },
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: { color: "#9CA3AF" },
+      },
+      y: {
+        grid: { color: "#374151" },
+        ticks: { color: "#9CA3AF" },
       },
     },
   };
@@ -103,7 +304,7 @@ const ChatComponent = () => {
         </div>
         <div className="ml-3">
           <div className="text-sm text-gray-100 font-bold">You</div>
-          <div className="text-xs text-gray-400">LIME Explanation:</div>
+          <div className="text-xs text-gray-400">LIME & SHAP Explanations:</div>
         </div>
       </motion.div>
 
@@ -126,13 +327,6 @@ const ChatComponent = () => {
                   : "bg-mainBg text-gray-200"
               } rounded-lg p-4 max-w-xl shadow-md`}
             >
-              <div
-                className={`${
-                  msg.sender === "system" ? "text-sm font-semibold mb-2" : ""
-                }`}
-              >
-                {msg.sender === "system" ? "LIME" : ""}
-              </div>
               <p className="text-sm whitespace-pre-line">{msg.text}</p>
             </div>
           </motion.div>
@@ -152,22 +346,35 @@ const ChatComponent = () => {
           </motion.div>
         )}
 
-        {/* Chart Section */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="p-4 bg-zinc-900 rounded-lg mt-4 shadow-md"
-        >
-          <h3 className="text-sm font-bold text-gray-300 mb-2">
-            LIME Bar Chart
-          </h3>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-3xl font-semibold text-white">2.579</p>
-            <span className="text-sm font-medium text-green-400">+2.45%</span>
-          </div>
-          <Bar data={barData} options={barOptions} />
-        </motion.div>
+        {/* LIME Chart Section */}
+        {!loadingLime && limeData.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="p-4 bg-zinc-900 rounded-lg mt-4 shadow-md"
+          >
+            <h3 className="text-sm font-bold text-gray-300 mb-2">
+              LIME Feature Impact Chart
+            </h3>
+            <Bar data={limeBarData} options={limeBarOptions} />
+          </motion.div>
+        )}
+
+        {/* SHAP Chart Section */}
+        {!loadingShap && shapData.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="p-4 bg-zinc-900 rounded-lg mt-4 shadow-md"
+          >
+            <h3 className="text-sm font-bold text-gray-300 mb-2">
+              SHAP Feature Impact Chart
+            </h3>
+            <Bar data={shapChartData} options={shapOptions} />
+          </motion.div>
+        )}
       </div>
 
       {/* Input Field */}
@@ -180,9 +387,10 @@ const ChatComponent = () => {
         <input
           type="text"
           className="flex-1 bg-zinc-700 text-gray-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-black"
-          placeholder="Message LIME"
+          placeholder="Message LIME & SHAP"
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown} // Added onKeyDown handler
         />
         <motion.button
           whileHover={{ scale: 1.2 }}
