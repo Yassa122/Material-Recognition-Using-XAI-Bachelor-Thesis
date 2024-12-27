@@ -40,4 +40,68 @@ body {
       transform: translateX(0%);
     }
   }
+
+
+}
+::selection {
+ background-color: #388a83; /* Tailwind's blue-400 */
+  color: #03fff2;
+}
+
+/* Selection style for dark mode */
+.dark ::selection {
+  background-color: #003b32; /* Tailwind's blue-400 */
+  color: #0cddd3; /* White text */
+}
+
+/* styles/globals.css */
+
+/* Customize Reactour tooltip */
+
+.reactour__overlay {
+  background-color: #2D3748 !important;
+}
+
+.reactour__helper {
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+}
+
+.reactour__header {
+  background-color: #4F46E5; /* Tailwind's indigo-600 */
+  color: white;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+.reactour__close {
+  color: white;
+}
+
+.reactour__body {
+  color: #e2e8f0; /* Tailwind's gray-200 */
+}
+
+.reactour__footer {
+  background-color: #4F46E5; /* Tailwind's indigo-600 */
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.reactour__button {
+  background-color: #818CF8; /* Tailwind's blue-400 */
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  margin: 0 4px;
+}
+
+.reactour__button--secondary {
+  background-color: #6B7280; /* Tailwind's gray-500 */
+}
+
+.reactour__buttons {
+  display: flex;
+  justify-content: flex-end;
 }
