@@ -1,5 +1,6 @@
 // components/LineChartComponent.tsx
-import React from "react";
+
+import React, { useState, useEffect } from "react";
 import {
   LineChart,
   Line,
@@ -8,75 +9,155 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceDot,
+  Legend,
 } from "recharts";
-
-// Simulated SMILES data with arbitrary properties for visualization
-const data = [
-  { name: "CCO", propertyA: 85, propertyB: 120 }, // Ethanol
-  { name: "CCN(CC)CC", propertyA: 100, propertyB: 160 }, // Diethylamine
-  { name: "CC(=O)OC1=CC=CC=C1C(=O)O", propertyA: 130, propertyB: 200 }, // Aspirin
-  { name: "C1=CC=C(C=C1)C=O", propertyA: 108, propertyB: 180 }, // Benzaldehyde (highlighted point)
-  { name: "C1CCCCC1", propertyA: 150, propertyB: 190 }, // Cyclohexane
-  { name: "CCCCCC", propertyA: 170, propertyB: 220 }, // Hexane
-];
-
 import { TooltipProps } from "recharts";
+import axios from "axios"; // Using axios for HTTP requests
 
-const CustomTooltip = ({ active, payload, label }: TooltipProps<number, string>) => {
+// Define the shape of your chart data
+interface ChartData {
+  name: string;
+  propertyA: number;
+  propertyB: number;
+  propertyC: number;
+}
+
+// Custom Tooltip Component
+const CustomTooltip = ({
+  active,
+  payload,
+  label,
+}: TooltipProps<number, string>) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-gray-800 text-white p-2 rounded">
         <p className="text-sm">{`SMILES: ${label}`}</p>
         <p className="text-base font-semibold">{`Property A: ${payload[0].value}`}</p>
+        <p className="text-base font-semibold">{`Property B: ${payload[1].value}`}</p>
+        <p className="text-base font-semibold">{`Property C: ${payload[2].value}`}</p>
       </div>
     );
   }
   return null;
 };
 
-const LineChartComponent = () => (
-  <div className="bg-sidebarBg p-4 rounded-lg">
-    <h2 className="text-lg font-semibold text-white mb-2">SMILES Properties</h2>
-    <p className="text-green-400 text-sm">Property A &bull; On track</p>
-    <p className="text-green-400 mt-1">Highlighted Data Point at Benzaldehyde</p>
+const LineChartComponent = () => {
+  const [data, setData] = useState<ChartData[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-    <ResponsiveContainer width="100%" height={250}>
-      <LineChart data={data}>
-        <XAxis dataKey="name" tick={{ fill: "#888" }} />
-        <YAxis hide />
-        <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#555" }} />
+  useEffect(() => {
+    const fetchChartData = async () => {
+      try {
+        const response = await axios.get<ChartData[]>(
+          "http://127.0.0.1:5000/api/chart-data"
+        );
+        setData(response.data);
+        setLoading(false);
+      } catch (err: any) {
+        console.error("Error fetching chart data:", err);
+        setError(err.response?.data?.error || "Failed to fetch chart data.");
+        setLoading(false);
+      }
+    };
 
-        {/* Highlighted Dot at Benzaldehyde */}
-        <ReferenceDot x="C1=CC=C(C=C1)C=O" y={108} r={5} fill="#4f46e5" stroke="none">
-          <text
-            x="108"
-            y="-10"
-            fill="#4f46e5"
-            fontSize={12}
-            textAnchor="middle"
-          >
-            108
-          </text>
-        </ReferenceDot>
+    fetchChartData();
+  }, []);
 
-        {/* Line with gradient colors */}
-        <defs>
-          <linearGradient id="colorPropertyA" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="5%" stopColor="#4f46e5" stopOpacity={1} />
-            <stop offset="95%" stopColor="#06b6d4" stopOpacity={1} />
-          </linearGradient>
-        </defs>
+  // Function to find the data point with the highest propertyA
+  const getHighlightedPoint = (): ChartData | undefined => {
+    if (data.length === 0) return undefined;
+    return data.reduce((prev, current) =>
+      prev.propertyA > current.propertyA ? prev : current
+    );
+  };
 
-        <Line
-          type="monotone"
-          dataKey="propertyA"
-          stroke="url(#colorPropertyA)"
-          strokeWidth={3}
-          dot={false}
-        />
-      </LineChart>
-    </ResponsiveContainer>
-  </div>
-);
+  if (loading) {
+    return (
+      <div className="bg-sidebarBg p-4 rounded-lg flex justify-center items-center">
+        <div className="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-sidebarBg p-4 rounded-lg text-red-500">
+        <p>Error: {error}</p>
+      </div>
+    );
+  }
+
+  const highlightedPoint = getHighlightedPoint();
+
+  return (
+    <div className="bg-sidebarBg p-4 rounded-lg">
+      <h2 className="text-lg font-semibold text-white mb-2">
+        SMILES Properties
+      </h2>
+      <p className="text-green-400 text-sm">Properties A, B & C</p>
+      <p className="text-green-400 mt-1">
+        Highlighted Data Point at Benzaldehyde
+      </p>
+
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={data}>
+          <XAxis dataKey="name" tick={{ fill: "#888" }} />
+          <YAxis hide />
+          <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#555" }} />
+          <Legend verticalAlign="top" height={36} />
+
+          {/* Highlighted Dot if Exists */}
+          {highlightedPoint && (
+            <ReferenceDot
+              x={highlightedPoint.name}
+              y={highlightedPoint.propertyA}
+              r={5}
+              fill="#4f46e5"
+              stroke="none"
+              label={{
+                position: "top",
+                value: highlightedPoint.propertyA,
+                fill: "#4f46e5",
+                fontSize: 12,
+                fontWeight: "bold",
+              }}
+            />
+          )}
+
+          {/* Line for Property A */}
+          <Line
+            type="monotone"
+            dataKey="propertyA"
+            name="Predicted pIC50"
+            stroke="#4f46e5"
+            strokeWidth={3}
+            dot={false}
+          />
+
+          {/* Line for Property B */}
+          <Line
+            type="monotone"
+            dataKey="propertyB"
+            name="Predicted logP"
+            stroke="#06b6d4"
+            strokeWidth={3}
+            dot={false}
+          />
+
+          {/* Line for Property C */}
+          <Line
+            type="monotone"
+            dataKey="propertyC"
+            name="Predicted Num Atoms"
+            stroke="#f97316"
+            strokeWidth={3}
+            dot={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
 
 export default LineChartComponent;
