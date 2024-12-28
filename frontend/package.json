@@ -33,6 +33,7 @@
     "react-joyride": "^2.9.3",
     "react-plotly.js": "^2.6.0",
     "react-shepherd": "^6.1.6",
+    "react-toastify": "^11.0.2",
     "react-tooltip": "^5.28.0",
     "reactour": "^1.19.4",
     "recharts": "^2.13.3",
