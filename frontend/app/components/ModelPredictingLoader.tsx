@@ -1,5 +1,7 @@
+// components/ModelTrainingLoader.tsx
 "use client";
-import { useState, useEffect } from "react";
+
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import StarIcon from "@/public/Star.svg"; // Adjust the path as needed
@@ -33,11 +35,18 @@ const ModelTrainingLoader = () => {
           setEstimatedTimeLeft(data.eta);
         }
 
+        // Redirect when progress reaches 100%
+        if (data.progress === 100) {
+          setLoading(false);
+          clearInterval(interval);
+          router.push("/pages/predictions"); // Redirect to /predictions
+        }
+
+        // Optionally, handle the status "completed" if it's separate from progress
         if (data.status === "completed") {
           setLoading(false);
           clearInterval(interval);
-          // Redirect or update the UI as needed
-          router.push("/pages/model-predicting");
+          router.push("/pages/predictions"); // Redirect to /predictions
         } else if (data.status === "error") {
           setLoading(false);
           clearInterval(interval);
@@ -51,6 +60,10 @@ const ModelTrainingLoader = () => {
       }
     };
 
+    // Initial fetch
+    fetchTrainingStatus();
+
+    // Set up interval to fetch status every 5 seconds
     interval = setInterval(fetchTrainingStatus, 5000); // Fetch every 5 seconds
 
     // Clean up the interval on component unmount
