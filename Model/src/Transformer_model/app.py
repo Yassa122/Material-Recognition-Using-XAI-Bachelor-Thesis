@@ -40,6 +40,12 @@ from lime.lime_tabular import LimeTabularExplainer
 import os
 import openai
 from flask import Flask, request, jsonify
+from sklearn.metrics import (
+    mean_squared_error,
+    mean_absolute_error,
+    r2_score,
+    accuracy_score,
+)
 
 # from dotenv import load_dotenv
 import logging
@@ -205,6 +211,41 @@ class KnowledgeAugmentedModel(nn.Module):
             )
 
         return model
+
+
+class KnowledgeAugmentedEmbeddingWrapper(nn.Module):
+    """
+    Wraps your KnowledgeAugmentedModel to accept 'embedded_inputs' (float)
+    instead of integer input_ids, so Captum can do integrated gradients properly.
+    """
+
+    def __init__(self, knowledge_model: KnowledgeAugmentedModel):
+        super().__init__()
+        self.knowledge_model = knowledge_model
+        # We'll grab the roberta embedding module
+        self.embedding = self.knowledge_model.base_model.roberta.embeddings
+
+    def forward(self, embedded_inputs, knowledge_features, attention_mask=None):
+        """
+        embedded_inputs: shape (batch_size, seq_len, hidden_dim)
+        knowledge_features: shape (batch_size, knowledge_dim)
+        attention_mask: shape (batch_size, seq_len)
+        """
+        # Pass these embedded inputs to the Roberta encoder
+        # This is equivalent to roberta(...) with inputs_embeds=embedded_inputs
+        encoder_outputs = self.knowledge_model.base_model.roberta(
+            inputs_embeds=embedded_inputs,
+            attention_mask=attention_mask,
+        )
+        # The last_hidden_state is shape (batch_size, seq_len, hidden_dim)
+        last_hidden_state = encoder_outputs.last_hidden_state
+
+        # Same logic as your KnowledgeAugmentedModel forward:
+        pooled_output = last_hidden_state[:, 0, :]  # [CLS] token
+        knowledge_output = self.knowledge_model.knowledge_fc(knowledge_features)
+        combined_output = torch.cat((pooled_output, knowledge_output), dim=1)
+        logits = self.knowledge_model.classifier(combined_output)
+        return logits
 
 
 # Load Pre-trained Model and Tokenizer
@@ -672,9 +713,9 @@ def explain_lime_as_json(file_path):
 
         # Define the prediction function for LIME
         def model_predict(knowledge_features_input):
-            knowledge_features_tensor = torch.tensor(
-                knowledge_features_input, dtype=torch.float
-            ).to(device)
+            knowledge_features_tensor = (
+                torch.tensor(knowledge_features_input).float().to(device)
+            )
             with torch.no_grad():
                 # Repeat fixed_input_ids and fixed_attention_mask for the batch size
                 batch_size = knowledge_features_tensor.shape[0]
@@ -1074,12 +1115,17 @@ def run_predictions(file_path):
 
         # Save predictions to CSV
         predictions_df = pd.DataFrame(
-            predictions,
-            columns=["Predicted_pIC50", "Predicted_logP", "Predicted_num_atoms"],
+        predictions,
+        columns=["Predicted_pIC50", "Predicted_logP", "Predicted_num_atoms"],
+        )
+        # Swap 'Predicted_logP' and 'Predicted_num_atoms'
+        predictions_df = predictions_df.rename(
+            columns={"Predicted_logP": "Predicted_num_atoms", "Predicted_num_atoms": "Predicted_logP"}
         )
         predictions_df["SMILES"] = smiles_predict
         predictions_file = os.path.join(UPLOAD_FOLDER, "predictions.csv")
         predictions_df.to_csv(predictions_file, index=False)
+
 
         # Update status to 'completed'
         prediction_status["status"] = "completed"
@@ -1310,6 +1356,462 @@ def download_results(filename):
         return jsonify({"error": str(e)}), 500
 
 
+def compute_integrated_gradients_embedding(
+    knowledge_model: KnowledgeAugmentedModel,
+    input_ids: torch.Tensor,
+    knowledge_features: torch.Tensor,
+    attention_mask: torch.Tensor,
+    tokenizer,
+    target_idx=0,
+):
+    """
+    Compute integrated gradients for your knowledge-augmented model in *embedding space*.
+
+    Args:
+      knowledge_model: your trained KnowledgeAugmentedModel
+      input_ids: shape [batch_size, seq_len] (long)
+      knowledge_features: shape [batch_size, knowledge_dim] (float)
+      attention_mask: shape [batch_size, seq_len] (long)
+      tokenizer: to get the embedding dimension if needed
+      target_idx: which output to do IG on if multi-output
+    Returns:
+      attributions: [batch_size, seq_len, hidden_dim]
+      delta: Captum's convergence delta
+    """
+
+    # 1) Build the embedding wrapper
+    wrapper = KnowledgeAugmentedEmbeddingWrapper(knowledge_model).to(device)
+
+    # 2) Convert your input_ids to embeddings
+    # We'll get the roberta embeddings. Typically:
+    with torch.no_grad():
+        # shape => (batch_size, seq_len, hidden_dim)
+        embedded_inputs = wrapper.embedding.word_embeddings(input_ids)
+        # (you might also add position embeddings, token_type embeddings, etc. if needed,
+        # but huggingface's roberta embeddings do it inside "embedding()" with forward function.
+        # This is minimal.)
+
+    # 3) Setup Captum
+    from captum.attr import IntegratedGradients
+
+    def wrapper_forward(embeds):
+        # shape: (batch_size, seq_len, hidden_dim)
+        logits = wrapper(
+            embedded_inputs=embeds,
+            knowledge_features=knowledge_features,
+            attention_mask=attention_mask,
+        )
+        return logits[:, target_idx]
+
+    # 3) Now pass that function into Captum
+    ig = IntegratedGradients(wrapper_forward)
+    # 4) Create a baseline in embedding space (all zeros, same shape)
+    baseline_embeds = torch.zeros_like(embedded_inputs, device=device)
+
+    # 5) Now run IG
+    attributions, delta = ig.attribute(
+        inputs=embedded_inputs,  # real embeddings
+        baselines=baseline_embeds,  # all-zero baseline
+        n_steps=50,
+        return_convergence_delta=True,
+    )
+    return attributions, delta
+
+
+@app.route("/check-training-status", methods=["GET"])
+def check_training_status():
+    """
+    Endpoint to check if a trained model exists.
+    Returns:
+        JSON: { "isTrained": true } if model exists, else { "isTrained": false }
+    """
+    model_path = "./fine_tuned_chemberta_with_knowledge"
+    required_files = ["config.json", "custom_model_state.pt"]
+
+    if os.path.exists(model_path) and os.path.isdir(model_path):
+        # Check for all required files
+        files_present = all(
+            os.path.exists(os.path.join(model_path, f)) for f in required_files
+        )
+        if files_present:
+            return jsonify({"isTrained": True}), 200
+    return jsonify({"isTrained": False}), 200
+
+
+@app.route("/api/chart-data", methods=["GET"])
+def get_chart_data():
+    """
+    Endpoint to retrieve chart data from predictions.csv.
+    Returns:
+        JSON: List of data points with 'name', 'propertyA', 'propertyB', 'propertyC'.
+    """
+    try:
+        predictions_file_path = os.path.join(UPLOAD_FOLDER, "predictions.csv")
+
+        if not os.path.exists(predictions_file_path):
+            return jsonify({"error": "Predictions file not found."}), 404
+
+        df = pd.read_csv(predictions_file_path)
+
+        # Ensure the necessary columns exist
+        required_columns = [
+            "SMILES",
+            "Predicted_pIC50",
+            "Predicted_logP",
+            "Predicted_num_atoms",
+        ]
+        for col in required_columns:
+            if col not in df.columns:
+                return (
+                    jsonify({"error": f"Column '{col}' not found in predictions.csv."}),
+                    400,
+                )
+
+        # Rename columns to match Recharts expectations
+        chart_data = df.rename(
+            columns={
+                "SMILES": "name",
+                "Predicted_pIC50": "propertyA",
+                "Predicted_logP": "propertyB",
+                "Predicted_num_atoms": "propertyC",
+            }
+        )[["name", "propertyA", "propertyB", "propertyC"]].to_dict(orient="records")
+
+        return jsonify(chart_data), 200
+
+    except Exception as e:
+        logging.error(f"Error in /api/chart-data: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/compound-properties", methods=["GET"])  # Renamed endpoint
+def get_compound_properties():
+    """
+    Endpoint to retrieve compound properties from predictions.csv.
+    Returns:
+        JSON: List of data points with 'name', 'propertyA', 'propertyB', 'propertyC'.
+    """
+    try:
+        predictions_file_path = os.path.join(UPLOAD_FOLDER, "predictions.csv")
+
+        if not os.path.exists(predictions_file_path):
+            return jsonify({"error": "Predictions file not found."}), 404
+
+        df = pd.read_csv(predictions_file_path)
+
+        # Ensure the necessary columns exist
+        required_columns = [
+            "SMILES",
+            "Predicted_pIC50",
+            "Predicted_logP",
+            "Predicted_num_atoms",
+        ]
+        for col in required_columns:
+            if col not in df.columns:
+                return (
+                    jsonify({"error": f"Column '{col}' not found in predictions.csv."}),
+                    400,
+                )
+
+        # Rename columns to match Recharts expectations
+        chart_data = df.rename(
+            columns={
+                "SMILES": "name",
+                "Predicted_pIC50": "propertyA",
+                "Predicted_logP": "propertyB",
+                "Predicted_num_atoms": "propertyC",
+            }
+        )[["name", "propertyA", "propertyB", "propertyC"]].to_dict(orient="records")
+
+        return jsonify(chart_data), 200
+
+    except Exception as e:
+        logging.error(f"Error in /api/compound-properties: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/model-metrics", methods=["GET"])
+def get_model_metrics():
+    """
+    1) Reads 'predictions.csv' with columns [Predicted_pIC50, Predicted_logP, Predicted_num_atoms, SMILES].
+    2) Uses RDKit to compute actual logP and actual number of atoms from the SMILES.
+    3) For logP and num_atoms, computes MSE, MAE, R² (regression).
+    4) For logP and num_atoms, also does a classification threshold to compute accuracy.
+       - logP threshold 0 => class=1 if actual>0 else 0 (sim. for predicted).
+       - num_atoms threshold 20 => class=1 if actual>=20 else 0 (sim. for predicted).
+    5) For pIC50, we have no actual data from SMILES, so by default we skip its regression metrics.
+       If you want a dummy classification for pIC50>0 => class=1 else 0, we do that as well.
+    6) Returns a JSON with all computed metrics per property.
+    """
+    try:
+        # Path to predictions CSV
+        csv_path = "./uploads/predictions.csv"
+        if not os.path.exists(csv_path):
+            return jsonify({"error": "File not found"}), 404
+
+        df = pd.read_csv(csv_path)
+
+        # Ensure required columns
+        required_cols = [
+            "Predicted_pIC50",
+            "Predicted_logP",
+            "Predicted_num_atoms",
+            "SMILES",
+        ]
+        for c in required_cols:
+            if c not in df.columns:
+                return jsonify({"error": f"Missing column '{c}' in CSV"}), 400
+
+        # We'll build a metrics dictionary like:
+        # {
+        #   "pIC50": {"mse": ..., "mae": ..., "r2": ..., "accuracy": ...},
+        #   "logP": {"mse": ..., "mae": ..., "r2": ..., "accuracy": ...},
+        #   "num_atoms": {"mse": ..., "mae": ..., "r2": ..., "accuracy": ...}
+        # }
+        results = {
+            "pIC50": {"mse": None, "mae": None, "r2": None, "accuracy": None},
+            "logP": {"mse": None, "mae": None, "r2": None, "accuracy": None},
+            "num_atoms": {"mse": None, "mae": None, "r2": None, "accuracy": None},
+        }
+
+        # Prepare lists for logP and num_atoms regression
+        actual_logp_vals = []
+        predicted_logp_vals = []
+
+        actual_num_atoms_vals = []
+        predicted_num_atoms_vals = []
+
+        # Classification label arrays
+        # We'll define them for each property so we can compute accuracy
+        actual_logp_labels = []
+        predicted_logp_labels = []
+
+        actual_num_atoms_labels = []
+        predicted_num_atoms_labels = []
+
+        # For pIC50, we only have predicted values, so no real regression.
+        # But we can do a dummy classification if user wants.
+        predicted_pic50_vals = []
+        predicted_pic50_labels = []
+
+        from rdkit import Chem
+        from rdkit.Chem import Descriptors
+
+        for idx, row in df.iterrows():
+            smiles = row["SMILES"]
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is None:
+                continue  # skip invalid SMILES
+
+            # ---------- Actual Values from RDKit ----------
+            actual_logp = Descriptors.MolLogP(mol)
+            actual_num_atoms = mol.GetNumAtoms()
+
+            # ---------- Predicted Values ----------
+            pred_logp = row["Predicted_logP"]
+            pred_num_atoms = row["Predicted_num_atoms"]
+            pred_pic50 = row["Predicted_pIC50"]
+
+            # Save them for regression
+            actual_logp_vals.append(actual_logp)
+            predicted_logp_vals.append(pred_logp)
+
+            actual_num_atoms_vals.append(actual_num_atoms)
+            predicted_num_atoms_vals.append(pred_num_atoms)
+
+            # ---------- Classification: logP threshold = 0 ----------
+            # Classify actual vs. predicted
+            # (1 if > 0, else 0)
+            actual_logp_labels.append(1 if actual_logp > 0 else 0)
+            predicted_logp_labels.append(1 if pred_logp > 0 else 0)
+
+            # ---------- Classification: num_atoms threshold = 20 ----------
+            actual_num_atoms_labels.append(1 if actual_num_atoms >= 20 else 0)
+            predicted_num_atoms_labels.append(1 if pred_num_atoms >= 20 else 0)
+
+            # ---------- pIC50: only predicted available ----------
+            predicted_pic50_vals.append(pred_pic50)
+            # If you want a classification threshold, e.g. pIC50>0 => active:
+            predicted_pic50_labels.append(1 if pred_pic50 > 0 else 0)
+
+        # --------------- Regression Metrics for logP ---------------
+        from sklearn.metrics import (
+            mean_squared_error,
+            mean_absolute_error,
+            r2_score,
+            accuracy_score,
+        )
+
+        if len(actual_logp_vals) > 0:
+            mse_logp = mean_squared_error(actual_logp_vals, predicted_logp_vals)
+            mae_logp = mean_absolute_error(actual_logp_vals, predicted_logp_vals)
+            r2_logp = r2_score(actual_logp_vals, predicted_logp_vals)
+            results["logP"]["mse"] = mse_logp
+            results["logP"]["mae"] = mae_logp
+            results["logP"]["r2"] = r2_logp
+
+            # Classification accuracy for logP
+            acc_logp = accuracy_score(actual_logp_labels, predicted_logp_labels)
+            results["logP"]["accuracy"] = acc_logp
+
+        # --------------- Regression Metrics for num_atoms ---------------
+        if len(actual_num_atoms_vals) > 0:
+            mse_atoms = mean_squared_error(
+                actual_num_atoms_vals, predicted_num_atoms_vals
+            )
+            mae_atoms = mean_absolute_error(
+                actual_num_atoms_vals, predicted_num_atoms_vals
+            )
+            r2_atoms = r2_score(actual_num_atoms_vals, predicted_num_atoms_vals)
+            results["num_atoms"]["mse"] = mse_atoms
+            results["num_atoms"]["mae"] = mae_atoms
+            results["num_atoms"]["r2"] = r2_atoms
+
+            # Classification accuracy for num_atoms
+            acc_atoms = accuracy_score(
+                actual_num_atoms_labels, predicted_num_atoms_labels
+            )
+            results["num_atoms"]["accuracy"] = acc_atoms
+
+        # --------------- pIC50 (NO real regression, but optional classification) ---------------
+        # We have no actual pIC50 from SMILES, so cannot do real MSE/MAE/R².
+        # If you had real pIC50 in your CSV, you'd read it and do a real regression comparison here.
+        # For demonstration, let's do classification vs. 0 threshold
+        # But note that "actual" is missing, so this is nonsense as a real metric. It will always
+        # compare predicted to a single threshold or to itself.
+        if len(predicted_pic50_vals) > 0:
+            # We'll skip MSE/MAE/R² since no actual values exist
+            # But do a "self-comparison" classification to show how it'd look
+            # In reality, this yields 100% if you compare the same predictions to the same threshold
+            # so it's not very meaningful.
+            # We can do "accuracy" = how many predicted pIC50>0 vs. predicted pIC50>0 (the same!)
+            # If you actually had an "Actual_pIC50" column, you'd compute real metrics.
+
+            # We'll at least set the accuracy to the fraction that is >0 if we wanted to compare
+            # But it's a dummy example:
+            # predicted_pic50_labels is set above
+            # actual 'labels'? We have none, so skip or do a dummy approach:
+            # For demonstration, let's compare predicted vs. predicted (which = 100% accuracy).
+            # We'll skip that to avoid confusion.
+
+            results["pIC50"][
+                "accuracy"
+            ] = None  # or 1.0 if you literally compare the same array
+
+        return jsonify(results), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+import torch
+from captum.attr import IntegratedGradients
+
+
+def compute_integrated_gradients(model, input_ids, attention_mask, target_idx=0):
+    """
+    model: A PyTorch model that returns 'logits'
+    input_ids: Tensor of shape [batch_size, seq_len]
+    attention_mask: Tensor of shape [batch_size, seq_len]
+    target_idx: which output dimension to compute IG for (0 if single-output regression, or an index for multi-class)
+    """
+
+    # We define a forward function for Captum
+    def forward_func(input_ids_embedded):
+        """
+        input_ids_embedded is a float Tensor that we'll feed into the model in place of 'input_ids'.
+        For typical huggingface models, we need to embed them or intercept the embeddings.
+        Alternatively, you can define an approach that modifies the embedding layer directly.
+        """
+        # The simplest way for sequence models is to let Captum handle the embeddings in the forward pass
+        # But you need a model that can accept "embedded" input. Otherwise, you might intercept the model's embedding layer in Captum.
+        raise NotImplementedError(
+            "Implement or wrap your huggingface model to accept embeddings directly."
+        )
+
+    # Alternatively, if your model directly takes input_ids:
+    def forward_func_ids(input_ids):
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+        # shape = (batch_size, num_labels)
+        return outputs["logits"][:, target_idx]
+
+    ig = IntegratedGradients(forward_func_ids)
+
+    # Baseline is typically zeros
+    baseline_input_ids = torch.zeros_like(input_ids).to(input_ids.device)
+
+    # Now compute attributions
+    attributions, delta = ig.attribute(
+        inputs=input_ids,
+        baselines=baseline_input_ids,
+        target=0,
+        return_convergence_delta=True,
+        n_steps=50,
+    )
+
+    return attributions, delta
+
+
+@app.route("/api/integrated-gradients", methods=["POST"])
+def integrated_gradients_api():
+    """
+    Example: pass JSON like:
+    {
+      "smiles_list": ["CCO", "CCCNC"],
+      "target_idx": 0
+    }
+    """
+    try:
+        data = request.json
+        smiles_list = data.get("smiles_list", [])
+        target_idx = data.get("target_idx", 0)
+
+        # 1) Tokenize (for integer input_ids)
+        tokenized = tokenizer(
+            smiles_list,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+            max_length=128,
+        )
+        input_ids = tokenized["input_ids"].to(device)  # shape: (batch_size, seq_len)
+        attention_mask = tokenized["attention_mask"].to(device)
+
+        # 2) Suppose you also extract knowledge_features from smiles
+        # For now, we'll do the same as run_predictions logic
+        knowledge_feats = []
+        for sm in smiles_list:
+            knowledge_feats.append(extract_knowledge_features(sm))
+        knowledge_feats_tensor = torch.tensor(knowledge_feats, dtype=torch.float).to(
+            device
+        )
+
+        # 3) Actually run integrated gradients in embedding space
+        attributions, delta = compute_integrated_gradients_embedding(
+            knowledge_model=model,
+            input_ids=input_ids,
+            knowledge_features=knowledge_feats_tensor,
+            attention_mask=attention_mask,
+            tokenizer=tokenizer,
+            target_idx=target_idx,
+        )
+
+        # 4) Convert the attributions to CPU lists
+        attributions_list = attributions.detach().cpu().numpy().tolist()
+        delta_val = float(delta.mean().detach().cpu().item())
+
+        response = {
+            "smiles_list": smiles_list,
+            "attributions": attributions_list,  # shape [batch_size, seq_len, hidden_dim]
+            "convergence_delta": delta_val,
+        }
+        return jsonify(response), 200
+
+    except Exception as e:
+        logging.error(f"IG error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import logging
@@ -1317,7 +1819,7 @@ import openai
 
 CORS(app)
 logging.basicConfig(level=logging.INFO)
-openai.api_key = "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"
+openai.api_key = "7be7fa1db754d75666d8967279d67bea"
 
 
 @app.route("/api/chatgpt", methods=["POST"])
@@ -1354,7 +1856,7 @@ def chatgpt():
 
         # Call OpenAI Chat API
         response = openai.ChatCompletion.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=chat_messages,
             temperature=0.7,  # Adjust creativity
         )
