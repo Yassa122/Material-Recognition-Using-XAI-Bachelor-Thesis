@@ -1,5 +1,16 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+// --- import Recharts components ---
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  CartesianGrid,
+  ResponsiveContainer,
+} from "recharts";
 
 interface PropertyMetrics {
   property: string;
@@ -53,13 +64,24 @@ const ModelMetricsCard: React.FC = () => {
   if (loading) return <div className="text-white">Loading...</div>;
   if (error) return <div className="text-red-500">{error}</div>;
 
+  // Prepare data for the bar chart
+  // We'll store each metric in separate fields, e.g. { property: 'logP', MSE: 0.12, MAE: 0.05, ... }
+  const chartData = metricsData.map((d) => ({
+    property: d.property,
+    MSE: d.mse ?? 0,
+    MAE: d.mae ?? 0,
+    R2: d.r2 ?? 0,
+    Accuracy: d.accuracy ?? 0,
+  }));
+
   return (
     <div className="bg-[#202020] p-6 rounded-lg shadow-lg">
       <h3 className="text-white text-lg font-semibold mb-4">
         Property Metrics
       </h3>
 
-      <table className="w-full text-left text-gray-300">
+      {/* ---------------- Table of Metrics ---------------- */}
+      <table className="w-full text-left text-gray-300 mb-8">
         <thead>
           <tr className="border-b border-gray-600">
             <th className="py-2">Property</th>
@@ -85,6 +107,27 @@ const ModelMetricsCard: React.FC = () => {
           ))}
         </tbody>
       </table>
+
+      {/* ---------------- Bar Chart for Metrics ---------------- */}
+      <div style={{ width: "100%", height: 400 }}>
+        <ResponsiveContainer>
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#555" />
+            <XAxis dataKey="property" stroke="#ccc" />
+            <YAxis stroke="#ccc" />
+            <Tooltip
+              contentStyle={{ background: "#333", border: "1px solid #ccc" }}
+              labelStyle={{ color: "#fff" }}
+            />
+            <Legend />
+            {/* Grouped bars for each metric */}
+            <Bar dataKey="MSE" fill="#82ca9d" />
+            <Bar dataKey="MAE" fill="#8884d8" />
+            <Bar dataKey="R2" fill="#ffc658" />
+            <Bar dataKey="Accuracy" fill="#d0ed57" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 };
