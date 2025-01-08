@@ -2,62 +2,6 @@
 
 This project uses the ChemBERTa model for molecular property predictions based on SMILES strings. The model is fine-tuned using a dataset of SMILES strings and associated molecular properties.
 
-## Prerequisites
-
-- Python 3.8 or later
-- `pip` package manager
-
-
-## Installation 
-
-1. **Clone the Repository**: First, clone the repository to your local machine.
-
-    ```bash
-    git clone https://github.com/Yassa122/Material-Recognition-Using-XAI-Bachelor-Thesis.git
-    cd Material-Recognition-Using-XAI-Bachelor-Thesis/Model/src/Transformer_model
-    ```
-
-2. **Set up a Python virtual environment**: Create and activate a virtual environment to install dependencies.
-
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-    ```
-
-3. **Install Dependencies**: Install the necessary Python packages. These are listed in `requirements.txt`.
-
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-   If the `requirements.txt` file is not available, manually install the necessary packages:
-
-    ```bash
-    pip install pandas torch transformers scikit-learn tqdm
-    ```
-
-## Files and Folder Structure
-
-- `Model/src/Transformer_model/`: Contains scripts and datasets for fine-tuning and prediction.
-- `fine_tuned_chemberta/`: Folder where the fine-tuned model will be saved.
-- `SMILES_Big_Data_Set.csv`: Dataset for fine-tuning the model.
-- `test.csv`: Dataset for making predictions.
-
-## Running the Model
-
-### 1. Prepare the Datasets
-
-Ensure you have the following CSV files in the specified directory:
-
-- `SMILES_Big_Data_Set.csv`: This should contain SMILES strings and molecular properties for training.
-- `test.csv`: This should contain SMILES strings without properties for prediction.
-
-### 2. Fine-Tune the Model
-
-Run the following script to fine-tune the ChemBERTa model using the SMILES strings in `SMILES_Big_Data_Set.csv`.
-
-``markdown
-# Frontend for Material Recognition Model with ChemBERTa
 
 The frontend for the **Material Recognition Model** is built using **Next.js**, a React-based framework that supports server-side rendering and optimized performance. This interface allows users to input **SMILES** strings and receive predictions for molecular properties.
 
@@ -65,52 +9,6 @@ The frontend for the **Material Recognition Model** is built using **Next.js**, 
 
 - **Node.js** (v14 or later)
 - **npm** package manager
-
-## Installation and Setup
-
-### 1. Clone the Repository
-
-If you haven't cloned the repository yet:
-
-``bash
-git clone https://github.com/Yassa122/Material-Recognition-Using-XAI-Bachelor-Thesis.git
-cd Material-Recognition-Using-XAI-Bachelor-Thesis/frontend
-``
-
-### 2. Install Dependencies
-
-Install the required **Node.js** dependencies:
-
-``bash
-npm install
-``
-
-This will install all packages specified in `package.json`, including **Next.js**, **React**, and other frontend libraries.
-
-### 3. Start the Development Server
-
-To run the frontend application locally:
-
-```bash
-npm run dev
-```
-
-The application will be available at [http://localhost:3000](http://localhost:3000).
-
-### 4. Build for Production (Optional)
-
-To create an optimized production build:
-
-```bash
-npm run build
-```
-
-To start the production server:
-
-```bash
-npm start
-```
-
 ## Project Structure
 
 - `pages/`: Contains React components mapped to different routes.
@@ -173,6 +71,52 @@ npm start
 ![Alt text](https://imgur.com/s748hPu.png).png)  
 *Description*: The user dashboard shows a history of SMILES predictions and profile settings.
 
+## Installation and Setup
+
+### 1. Clone the Repository
+
+If you haven't cloned the repository yet:
+
+``bash
+git clone https://github.com/Yassa122/Material-Recognition-Using-XAI-Bachelor-Thesis.git
+cd Material-Recognition-Using-XAI-Bachelor-Thesis/frontend
+``
+
+### 2. Install Dependencies
+
+Install the required **Node.js** dependencies:
+
+``bash
+npm install
+``
+
+This will install all packages specified in `package.json`, including **Next.js**, **React**, and other frontend libraries.
+
+### 3. Start the Development Server
+
+To run the frontend application locally:
+
+```bash
+npm run dev
+```
+
+The application will be available at [http://localhost:3000](http://localhost:3000).
+
+### 4. Build for Production (Optional)
+
+To create an optimized production build:
+
+```bash
+npm run build
+```
+
+To start the production server:
+
+```bash
+npm start
+```
+
+
 ---
 
 ## Key Technologies
@@ -208,6 +152,64 @@ To deploy the frontend application, follow these steps:
    - **Docker**: Use `Dockerfile` for containerized deployment.
 
 ## Additional Resources
+
+## Prerequisites
+
+- Python 3.8 or later
+- `pip` package manager
+
+
+## Installation 
+
+1. **Clone the Repository**: First, clone the repository to your local machine.
+
+    ```bash
+    git clone https://github.com/Yassa122/Material-Recognition-Using-XAI-Bachelor-Thesis.git
+    cd Material-Recognition-Using-XAI-Bachelor-Thesis/Model/src/Transformer_model
+    ```
+
+2. **Set up a Python virtual environment**: Create and activate a virtual environment to install dependencies.
+
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+    ```
+
+3. **Install Dependencies**: Install the necessary Python packages. These are listed in `requirements.txt`.
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+   If the `requirements.txt` file is not available, manually install the necessary packages:
+
+    ```bash
+    pip install pandas torch transformers scikit-learn tqdm
+    ```
+
+## Files and Folder Structure
+
+- `Model/src/Transformer_model/`: Contains scripts and datasets for fine-tuning and prediction.
+- `fine_tuned_chemberta/`: Folder where the fine-tuned model will be saved.
+- `SMILES_Big_Data_Set.csv`: Dataset for fine-tuning the model.
+- `test.csv`: Dataset for making predictions.
+
+## Running the Model
+
+### 1. Prepare the Datasets
+
+Ensure you have the following CSV files in the specified directory:
+
+- `SMILES_Big_Data_Set.csv`: This should contain SMILES strings and molecular properties for training.
+- `test.csv`: This should contain SMILES strings without properties for prediction.
+
+### 2. Fine-Tune the Model
+
+Run the following script to fine-tune the ChemBERTa model using the SMILES strings in `SMILES_Big_Data_Set.csv`.
+
+``markdown
+# Frontend for Material Recognition Model with ChemBERTa
+
 
 - **Next.js Documentation**: [https://nextjs.org/docs](https://nextjs.org/docs)
 - **React Documentation**: [https://reactjs.org/docs](https://reactjs.org/docs)
