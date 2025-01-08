@@ -42,7 +42,6 @@ const BiologicalActivityTable = ({ data }) => {
     getTableBodyProps,
     headerGroups,
     prepareRow,
-    // Pagination props
     page,
     canPreviousPage,
     canNextPage,
@@ -64,39 +63,39 @@ const BiologicalActivityTable = ({ data }) => {
   );
 
   return (
-    <div className="mb-8">
-      <h2 className="text-2xl font-semibold mb-4">Biological Activity Data</h2>
-      <div className="overflow-x-auto">
-        <table
-          {...getTableProps()}
-          className="min-w-full bg-gray-700 text-left"
-        >
-          <thead>
+    <div className="mb-8 bg-zinc-900 text-gray-200 p-6 rounded-md shadow-md">
+      <h2 className="text-2xl font-bold mb-6">Biological Activity Data</h2>
+
+      <div className="overflow-x-auto rounded-md border border-zinc-800">
+        <table {...getTableProps()} className="w-full border-collapse">
+          <thead className="bg-zinc-800">
             {headerGroups.map((headerGroup) => (
-              <tr {...headerGroup.getHeaderGroupProps()} className="border-b">
+              <tr
+                {...headerGroup.getHeaderGroupProps()}
+                className="border-b border-zinc-700"
+              >
                 {headerGroup.headers.map((column) => (
                   <th
                     {...column.getHeaderProps(column.getSortByToggleProps())}
-                    className="px-4 py-2"
+                    className="px-4 py-3 text-left text-sm font-semibold uppercase tracking-wide border-zinc-700"
                   >
                     {column.render("Header")}
-                    {/* Add a sort indicator */}
-                    <span>
-                      {column.isSorted
-                        ? column.isSortedDesc
-                          ? " 🔽"
-                          : " 🔼"
-                        : ""}
+                    <span className="ml-1">
+                      {column.isSorted ? (column.isSortedDesc ? "▼" : "▲") : ""}
                     </span>
                   </th>
                 ))}
               </tr>
             ))}
           </thead>
-          <tbody {...getTableBodyProps()}>
+
+          <tbody {...getTableBodyProps()} className="text-sm">
             {page.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-4 py-2 text-center">
+                <td
+                  colSpan={columns.length}
+                  className="px-4 py-3 text-center border-b border-zinc-700"
+                >
                   No data available.
                 </td>
               </tr>
@@ -104,9 +103,12 @@ const BiologicalActivityTable = ({ data }) => {
               page.map((row) => {
                 prepareRow(row);
                 return (
-                  <tr {...row.getRowProps()} className="border-b">
+                  <tr
+                    {...row.getRowProps()}
+                    className="border-b border-zinc-700 hover:bg-zinc-800"
+                  >
                     {row.cells.map((cell) => (
-                      <td {...cell.getCellProps()} className="px-4 py-2">
+                      <td {...cell.getCellProps()} className="px-4 py-3">
                         {cell.render("Cell") || "-"}
                       </td>
                     ))}
@@ -119,45 +121,47 @@ const BiologicalActivityTable = ({ data }) => {
       </div>
 
       {/* Pagination Controls */}
-      <div className="flex justify-between items-center mt-4">
-        <div>
+      <div className="flex flex-col sm:flex-row justify-between items-center mt-4 gap-2">
+        <div className="flex items-center space-x-2">
           <button
             onClick={() => gotoPage(0)}
             disabled={!canPreviousPage}
-            className="px-3 py-1 bg-gray-600 rounded mr-2 disabled:opacity-50"
+            className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded disabled:opacity-50"
           >
             {"<<"}
           </button>
           <button
             onClick={() => previousPage()}
             disabled={!canPreviousPage}
-            className="px-3 py-1 bg-gray-600 rounded mr-2 disabled:opacity-50"
+            className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded disabled:opacity-50"
           >
             {"<"}
           </button>
           <button
             onClick={() => nextPage()}
             disabled={!canNextPage}
-            className="px-3 py-1 bg-gray-600 rounded mr-2 disabled:opacity-50"
+            className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded disabled:opacity-50"
           >
             {">"}
           </button>
           <button
             onClick={() => gotoPage(pageCount - 1)}
             disabled={!canNextPage}
-            className="px-3 py-1 bg-gray-600 rounded disabled:opacity-50"
+            className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded disabled:opacity-50"
           >
             {">>"}
           </button>
         </div>
-        <span>
+
+        <div className="text-sm">
           Page{" "}
           <strong>
             {pageIndex + 1} of {pageOptions.length}
-          </strong>{" "}
-        </span>
-        <span>
-          | Go to page:{" "}
+          </strong>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <span className="text-sm">Go to page:</span>
           <input
             type="number"
             defaultValue={pageIndex + 1}
@@ -165,15 +169,14 @@ const BiologicalActivityTable = ({ data }) => {
               const page = e.target.value ? Number(e.target.value) - 1 : 0;
               gotoPage(page);
             }}
-            className="w-16 px-2 py-1 bg-gray-600 text-gray-100 rounded"
+            className="w-16 px-2 py-1 bg-zinc-800 text-gray-200 rounded"
           />
-        </span>
+        </div>
+
         <select
           value={pageSize}
-          onChange={(e) => {
-            setPageSize(Number(e.target.value));
-          }}
-          className="px-2 py-1 bg-gray-600 text-gray-100 rounded"
+          onChange={(e) => setPageSize(Number(e.target.value))}
+          className="px-2 py-1 bg-zinc-800 text-gray-200 rounded"
         >
           {[5, 10, 20, 50].map((pageSizeOption) => (
             <option key={pageSizeOption} value={pageSizeOption}>
