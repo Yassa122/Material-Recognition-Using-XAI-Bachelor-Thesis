@@ -65,9 +65,9 @@ The frontend for the **Material Recognition Model** is built using **Next.js**, 
 - Provides graphical representations of molecular data.
 - Allows users to visualize trends and compare predictions.
 
-![Alt text](https://imgur.com/HLPgUax.png).png)  
-![Alt text](https://imgur.com/jn8o0Hp.png).png)  
-![Alt text](https://imgur.com/U4DCg42.png).png)
+![Alt text](https://imgur.com/HLPgUax.png)  
+![Alt text](https://imgur.com/jn8o0Hp.png)  
+![Alt text](https://imgur.com/U4DCg42.png)
 *Description*: A graphical summary of molecular properties.
 
 ---
