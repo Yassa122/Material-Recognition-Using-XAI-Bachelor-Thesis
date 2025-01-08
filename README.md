@@ -1,4 +1,4 @@
-# Material Recognition Model with ChemBERTa
+# Using XAI Algorithms for Material Recognition 
 
 This project uses the ChemBERTa model for molecular property predictions based on SMILES strings. The model is fine-tuned using a dataset of SMILES strings and associated molecular properties.
 
@@ -126,7 +126,7 @@ npm start
 - Welcomes users to the application.
 - Provides navigation links to the main features.
 
-![Homepage](public/images/homepage.png)  
+![Homepage](https://imgur.com/4kNVN4O.png)
 *Description*: The homepage provides quick access to the input and history pages.
 
 ---
@@ -136,7 +136,7 @@ npm start
 - A text input where users can enter **SMILES** strings.
 - A button to submit the input for property prediction.
 
-![Input SMILES](public/images/input_smiles.png)  
+![Input SMILES](https://imgur.com/QyhM5tr.png)  
 *Description*: This interface enables users to submit their SMILES strings for prediction.
 
 ---
@@ -146,7 +146,8 @@ npm start
 - Displays the predicted molecular properties in a structured format.
 - Shows key molecular descriptors and properties.
 
-![Prediction Results](public/images/prediction_results.png)  
+![Prediction Results](https://imgur.com/0u1czda.png)
+![ChatGPT integration](https://imgur.com/fRd4EVQ.png)
 *Description*: The results page shows the predicted properties of the molecule.
 
 ---
@@ -156,7 +157,9 @@ npm start
 - Provides graphical representations of molecular data.
 - Allows users to visualize trends and compare predictions.
 
-![Data Visualization](public/images/data_visualization.png)  
+![Alt text](https://imgur.com/HLPgUax.png).png)  
+![Alt text](https://imgur.com/jn8o0Hp.png).png)  
+![Alt text](https://imgur.com/U4DCg42.png).png)
 *Description*: A graphical summary of molecular properties.
 
 ---
@@ -167,7 +170,7 @@ npm start
 - Displays a history of previous predictions.
 - Allows users to update their profiles.
 
-![User Dashboard](public/images/user_dashboard.png)  
+![Alt text](https://imgur.com/s748hPu.png).png)  
 *Description*: The user dashboard shows a history of SMILES predictions and profile settings.
 
 ---
@@ -197,6 +200,7 @@ To deploy the frontend application, follow these steps:
     ```bash
     npm run build
     ```
+
 
 2. Deploy to your hosting platform of choice:
    - **Vercel**: Recommended platform for **Next.js**.
