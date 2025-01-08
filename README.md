@@ -27,9 +27,19 @@ The frontend for the **Material Recognition Model** is built using **Next.js**, 
 ![Homepage](https://imgur.com/4kNVN4O.png)
 *Description*: The homepage provides quick access to the input and history pages.
 
+
+
+### 2. **User Dashboard**
+
+- Personalized dashboard for logged-in users.
+- Displays a history of previous predictions.
+- Allows users to update their profiles.
+
+![Alt text](https://imgur.com/s748hPu.png)  
+*Description*: The user dashboard shows a history of SMILES predictions and profile settings.
 ---
 
-### 2. **Input SMILES Interface**
+### 3. **Input SMILES Interface**
 
 - A text input where users can enter **SMILES** strings.
 - A button to submit the input for property prediction.
@@ -39,7 +49,7 @@ The frontend for the **Material Recognition Model** is built using **Next.js**, 
 
 ---
 
-### 3. **Prediction Results**
+### 4. **Prediction Results**
 
 - Displays the predicted molecular properties in a structured format.
 - Shows key molecular descriptors and properties.
@@ -50,7 +60,7 @@ The frontend for the **Material Recognition Model** is built using **Next.js**, 
 
 ---
 
-### 4. **Data Visualization**
+### 5. **Data Visualization**
 
 - Provides graphical representations of molecular data.
 - Allows users to visualize trends and compare predictions.
@@ -62,14 +72,6 @@ The frontend for the **Material Recognition Model** is built using **Next.js**, 
 
 ---
 
-### 5. **User Dashboard**
-
-- Personalized dashboard for logged-in users.
-- Displays a history of previous predictions.
-- Allows users to update their profiles.
-
-![Alt text](https://imgur.com/s748hPu.png).png)  
-*Description*: The user dashboard shows a history of SMILES predictions and profile settings.
 
 ## Installation and Setup
 
