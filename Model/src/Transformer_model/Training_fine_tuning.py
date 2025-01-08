@@ -260,119 +260,119 @@ def main():
     # # Move the model to the device
     model.to(device)
 
-    # # Load the fine-tuning dataset (with properties)
-    # fine_tune_file = "SMILES_Big_Data_Set.csv"  # Training dataset path
-    # smiles_train, targets_train, knowledge_features_train = load_smiles_data(
-    #     fine_tune_file, properties_present=True
-    # )
+    # Load the fine-tuning dataset (with properties)
+    fine_tune_file = "SMILES_Big_Data_Set_1000.csv"  # Training dataset path
+    smiles_train, targets_train, knowledge_features_train = load_smiles_data(
+        fine_tune_file, properties_present=True
+    )
 
-    # # Split data into training and validation sets
-    # from sklearn.model_selection import train_test_split
+    # Split data into training and validation sets
+    from sklearn.model_selection import train_test_split
 
-    # (
-    #     train_smiles,
-    #     val_smiles,
-    #     train_targets,
-    #     val_targets,
-    #     train_knowledge_features,
-    #     val_knowledge_features,
-    # ) = train_test_split(
-    #     smiles_train,
-    #     targets_train,
-    #     knowledge_features_train,
-    #     test_size=0.2,
-    #     random_state=42,
-    # )
+    (
+        train_smiles,
+        val_smiles,
+        train_targets,
+        val_targets,
+        train_knowledge_features,
+        val_knowledge_features,
+    ) = train_test_split(
+        smiles_train,
+        targets_train,
+        knowledge_features_train,
+        test_size=0.2,
+        random_state=42,
+    )
 
-    # # Prepare training and validation datasets
-    # train_dataset = SMILESDataset(
-    #     train_smiles,
-    #     train_knowledge_features,
-    #     train_targets,
-    #     tokenizer,
-    #     max_length=128,
-    # )
-    # val_dataset = SMILESDataset(
-    #     val_smiles, val_knowledge_features, val_targets, tokenizer, max_length=128
-    # )
+    # Prepare training and validation datasets
+    train_dataset = SMILESDataset(
+        train_smiles,
+        train_knowledge_features,
+        train_targets,
+        tokenizer,
+        max_length=128,
+    )
+    val_dataset = SMILESDataset(
+        val_smiles, val_knowledge_features, val_targets, tokenizer, max_length=128
+    )
 
-    # # Training arguments
-    # training_args = TrainingArguments(
-    #     output_dir="./results",  # Output directory
-    #     evaluation_strategy="epoch",
-    #     per_device_train_batch_size=16,
-    #     per_device_eval_batch_size=16,
-    #     num_train_epochs=3,
-    #     weight_decay=0.01,
-    #     logging_dir="./logs",
-    #     logging_steps=10,
-    #     # Automatically select device (GPU if available)
-    #     # device=device,  # Note: Trainer automatically handles device placement
-    # )
+    # Training arguments
+    training_args = TrainingArguments(
+        output_dir="./results",  # Output directory
+        evaluation_strategy="epoch",
+        per_device_train_batch_size=16,
+        per_device_eval_batch_size=16,
+        num_train_epochs=3,
+        weight_decay=0.01,
+        logging_dir="./logs",
+        logging_steps=10,
+        # Automatically select device (GPU if available)
+        # device=device,  # Note: Trainer automatically handles device placement
+    )
 
-    # # Trainer for fine-tuning
-    # trainer = Trainer(
-    #     model=model,
-    #     args=training_args,
-    #     train_dataset=train_dataset,
-    #     eval_dataset=val_dataset,
-    #     data_collator=data_collator,
-    # )
+    # Trainer for fine-tuning
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        data_collator=data_collator,
+    )
 
-    # # Train the model
-    # trainer.train()
+    # Train the model
+    trainer.train()
 
-    # # Save the fine-tuned model
-    # trainer.save_model("fine_tuned_chemberta_with_knowledge")
+    # Save the fine-tuned model
+    trainer.save_model("fine_tuned_chemberta_with_knowledge")
 
-    # # Load the dataset for prediction (only SMILES strings)
-    # predict_file = "test.csv"  # Prediction dataset path
-    # smiles_predict, _, knowledge_features_predict = load_smiles_data(
-    #     predict_file, properties_present=False
-    # )
+    # Load the dataset for prediction (only SMILES strings)
+    predict_file = "test_1000.csv"  # Prediction dataset path
+    smiles_predict, _, knowledge_features_predict = load_smiles_data(
+        predict_file, properties_present=False
+    )
 
-    # # Prepare prediction dataset
-    # predict_dataset = SMILESDataset(
-    #     smiles_predict, knowledge_features_predict, tokenizer=tokenizer, max_length=128
-    # )
+    # Prepare prediction dataset
+    predict_dataset = SMILESDataset(
+        smiles_predict, knowledge_features_predict, tokenizer=tokenizer, max_length=128
+    )
 
-    # # Generate predictions
-    # predictions = []
+    # Generate predictions
+    predictions = []
 
     # Move the model to the device (already moved, but reaffirming)
     model.to(device)
     model.eval()  # Set model to evaluation mode
 
-    # # Prepare the dataloader
-    # dataloader = DataLoader(predict_dataset, batch_size=16, collate_fn=data_collator)
+    # Prepare the dataloader
+    dataloader = DataLoader(predict_dataset, batch_size=16, collate_fn=data_collator)
 
-    # # Time tracking start
-    # start_time = time.time()
+    # Time tracking start
+    start_time = time.time()
 
-    # # Using tqdm for progress bar
-    # with torch.no_grad():
-    #     for batch in tqdm(dataloader, desc="Predicting", unit="batch"):
-    #         # Move inputs to the device
-    #         batch = {k: v.to(device) for k, v in batch.items()}
-    #         outputs = model(**batch)
-    #         logits = outputs["logits"]
-    #         predictions.extend(logits.cpu().numpy())
+    # Using tqdm for progress bar
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Predicting", unit="batch"):
+            # Move inputs to the device
+            batch = {k: v.to(device) for k, v in batch.items()}
+            outputs = model(**batch)
+            logits = outputs["logits"]
+            predictions.extend(logits.cpu().numpy())
 
-    # # Time tracking end
-    # end_time = time.time()
-    # elapsed_time = end_time - start_time
+    # Time tracking end
+    end_time = time.time()
+    elapsed_time = end_time - start_time
 
-    # # Save predictions
-    # predictions_df = pd.DataFrame(
-    #     predictions,
-    #     columns=["Predicted_pIC50", "Predicted_logP", "Predicted_num_atoms"],
-    # )
-    # predictions_df["SMILES"] = smiles_predict
-    # predictions_df.to_csv("predicted_properties.csv", index=False)
+    # Save predictions
+    predictions_df = pd.DataFrame(
+        predictions,
+        columns=["Predicted_pIC50", "Predicted_logP", "Predicted_num_atoms"],
+    )
+    predictions_df["SMILES"] = smiles_predict
+    predictions_df.to_csv("predicted_properties.csv", index=False)
 
-    # print(
-    #     f"Predictions saved to 'predicted_properties.csv'. Total prediction time: {elapsed_time:.2f} seconds."
-    # )
+    print(
+        f"Predictions saved to 'predicted_properties.csv'. Total prediction time: {elapsed_time:.2f} seconds."
+    )
     explain_shap_predictions("predicted_properties.csv", model, device, tokenizer)
 
 
