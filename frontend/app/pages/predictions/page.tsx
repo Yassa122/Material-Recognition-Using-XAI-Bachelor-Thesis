@@ -4,7 +4,10 @@ import ShapExplanationChart from "@/app/components/ShapExplanationChart";
 import ChatComponent from "@/app/components/ChatComponent";
 import PredictedPropertiesTable from "@/app/components/PredictedPropertiesTable";
 
-const DataUploadPage = () => {
+// 1. Import Link from next/link
+import Link from "next/link";
+
+const Predicitions = () => {
   return (
     <div className="bg-mainBg min-h-screen text-gray-100 flex">
       {/* Sidebar */}
@@ -31,9 +34,19 @@ const DataUploadPage = () => {
             <ChatComponent />
           </div>
         </div>
+
+        {/* 2. Add the button at the end of the page */}
+        <div className="mt-8 flex justify-end">
+          <Link href="/pages/bio-activity">
+            {/* Tailwind styling for button */}
+            <button className="px-4 py-2 bg-blue-500 text-white font-semibold rounded-md hover:bg-blue-600 transition-colors">
+              Check Biological Activity
+            </button>
+          </Link>
+        </div>
       </div>
     </div>
   );
 };
 
-export default DataUploadPage;
+export default Predicitions;
